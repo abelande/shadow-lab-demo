@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html><head><title>Chart Debug</title></head>
+<body style="background:#0a0a0a;color:#ccc;font-family:monospace;margin:20px">
+<h3>P6 Chart Debug</h3>
+<div id="chart-box" style="width:800px;height:400px;border:1px solid #333"></div>
+<pre id="log" style="max-height:400px;overflow:auto;font-size:11px;color:#8f8"></pre>
+<script src="https://unpkg.com/lightweight-charts@4/dist/lightweight-charts.standalone.production.js"></script>
+<script>
+const log = document.getElementById('log');
+function L(msg) { log.textContent += msg + '\n'; log.scrollTop = log.scrollHeight; }
+
+try {
+  L('LightweightCharts loaded: ' + typeof LightweightCharts);
+  const chart = LightweightCharts.createChart(document.getElementById('chart-box'), {
+    width: 800, height: 400,
+    layout: { background: { type: 'solid', color: '#0a0a0a' }, textColor: '#888' },
+    timeScale: { timeVisible: true, secondsVisible: true },
+  });
+  const series = chart.addCandlestickSeries({
+    upColor: '#27ae60', downColor: '#e74c3c',
+    borderUpColor: '#2ecc71', borderDownColor: '#ff6b6b',
+    wickUpColor: '#2ecc71', wickDownColor: '#ff6b6b',
+  });
+  L('Chart + series created OK');
+
+  const wsUrl = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws';
+  L('Connecting to: ' + wsUrl);
+  const ws = new WebSocket(wsUrl);
+  let frameCount = 0;
+  let dataFrameCount = 0;
+  let currentBucket = null;
+  let lastPushedTime = 0;
+
+  ws.onopen = () => L('WS connected');
+  ws.onerror = (e) => L('WS error');
+  ws.onclose = (e) => L('WS closed: code=' + e.code + ' reason=' + e.reason);
+
+  ws.onmessage = (evt) => {
+    frameCount++;
+    let data;
+    try {
+      data = JSON.parse(evt.data);
+    } catch (e) {
+      L('Frame ' + frameCount + ': JSON parse error: ' + e.message);
+      L('  raw (first 200): ' + evt.data.substring(0, 200));
+      return;
+    }
+
+    // Skip heartbeat pings
+    if (data.type === 'ping') {
+      if (frameCount <= 3) L('Frame ' + frameCount + ': heartbeat ping (skipped)');
+      return;
+    }
+
+    // Debug: show raw keys on first few frames
+    if (dataFrameCount < 3) {
+      L('Frame ' + frameCount + ' keys: ' + Object.keys(data).join(', '));
+      L('  dom_rows: ' + (data.dom_rows ? data.dom_rows.length + ' items' : 'MISSING'));
+      L('  bid_bars: ' + (data.bid_bars ? data.bid_bars.length + ' items' : 'MISSING'));
+      if (data.dom_rows && data.dom_rows.length > 0) {
+        L('  dom_rows[0]: ' + JSON.stringify(data.dom_rows[0]));
+      }
+      if (data.bid_bars && data.bid_bars.length > 0) {
+        L('  bid_bars[0]: ' + JSON.stringify(data.bid_bars[0]));
+      }
+    }
+
+    // Extract price — try multiple methods
+    let price = null;
+    let priceSource = '';
+
+    // Method 1: dom_rows bid/ask midpoint
+    if (data.dom_rows && data.dom_rows.length > 0) {
+      let bestBid = null, bestAsk = null;
+      for (const row of data.dom_rows) {
+        if (!row || row.price == null) continue;
+        if (row.side === 'BID' && (bestBid === null || row.price > bestBid)) bestBid = row.price;
+        if (row.side === 'ASK' && (bestAsk === null || row.price < bestAsk)) bestAsk = row.price;
+      }
+      if (bestBid !== null && bestAsk !== null) { price = (bestBid + bestAsk) / 2; priceSource = 'dom mid'; }
+      else if (bestBid !== null) { price = bestBid; priceSource = 'dom bid'; }
+      else if (bestAsk !== null) { price = bestAsk; priceSource = 'dom ask'; }
+
+      if (dataFrameCount < 3) {
+        L('  dom bestBid=' + bestBid + ' bestAsk=' + bestAsk);
+      }
+    }
+
+    // Method 2: bid_bars
+    if (price === null && data.bid_bars && data.bid_bars.length > 0) {
+      price = data.bid_bars[0].price;
+      priceSource = 'bid_bar';
+    }
+
+    // Method 3: ask_bars
+    if (price === null && data.ask_bars && data.ask_bars.length > 0) {
+      price = data.ask_bars[0].price;
+      priceSource = 'ask_bar';
+    }
+
+    if (price === null) {
+      dataFrameCount++;
+      if (dataFrameCount <= 10) L('Frame ' + frameCount + ': NO PRICE FOUND');
+      return;
+    }
+
+    // Build candle
+    const tsMs = Number(data.timestamp_ms) || Date.now();
+    const tsSec = Math.floor(tsMs / 1000);
+    const bucketTime = tsSec;  // 1-second buckets
+
+    if (currentBucket === null) {
+      currentBucket = { time: Math.max(bucketTime, lastPushedTime + 1), open: price, high: price, low: price, close: price };
+    } else if (bucketTime > currentBucket.time) {
+      currentBucket = { time: Math.max(bucketTime, lastPushedTime + 1), open: price, high: price, low: price, close: price };
+    } else {
+      if (price > currentBucket.high) currentBucket.high = price;
+      if (price < currentBucket.low) currentBucket.low = price;
+      currentBucket.close = price;
+    }
+
+    try {
+      series.update(currentBucket);
+      lastPushedTime = currentBucket.time;
+      dataFrameCount++;
+      if (dataFrameCount <= 5 || dataFrameCount % 100 === 0) {
+        L('Frame ' + frameCount + ' [' + priceSource + ']: price=' + price.toFixed(2) + ' time=' + currentBucket.time + ' candles OK ✓');
+      }
+    } catch (e) {
+      L('Frame ' + frameCount + ' CHART ERROR: ' + e.message);
+      // Force reset
+      lastPushedTime = currentBucket.time;
+      currentBucket = null;
+    }
+  };
+} catch (e) {
+  L('INIT ERROR: ' + e.message + '\n' + e.stack);
+}
+</script>
+</body></html>

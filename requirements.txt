@@ -1,0 +1,8 @@
+fastapi
+uvicorn[standard]
+websockets
+aiohttp
+numpy
+pydantic>=2.0
+databento
+polars>=1.0

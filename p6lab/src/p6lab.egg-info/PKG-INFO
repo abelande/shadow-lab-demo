@@ -1,0 +1,1130 @@
+Metadata-Version: 2.4
+Name: p6lab
+Version: 0.1.0
+Summary: P6 Research Lab — shared library for order-book microstructure research
+Author: Bel
+License: Proprietary
+Requires-Python: >=3.11
+Description-Content-Type: text/markdown
+Requires-Dist: numpy<3.0,>=1.26
+Requires-Dist: pandas<4.0,>=2.1
+Provides-Extra: lab
+Requires-Dist: scikit-learn<2.0,>=1.3; extra == "lab"
+Requires-Dist: scipy<2.0,>=1.11; extra == "lab"
+Requires-Dist: hdbscan<0.9,>=0.8.33; extra == "lab"
+Requires-Dist: umap-learn<0.6,>=0.5; extra == "lab"
+Requires-Dist: pyarrow<25,>=14; extra == "lab"
+Requires-Dist: pydantic<3.0,>=2.0; extra == "lab"
+Requires-Dist: sortedcontainers<3.0,>=2.4; extra == "lab"
+Requires-Dist: filelock<4.0,>=3.12; extra == "lab"
+Requires-Dist: lightgbm<5.0,>=4.0; extra == "lab"
+Requires-Dist: tabulate<1.0,>=0.9; extra == "lab"
+Requires-Dist: databento<1.0,>=0.50; extra == "lab"
+Provides-Extra: notebook
+Requires-Dist: jupyter<2.0,>=1.0; extra == "notebook"
+Requires-Dist: nbclient<1.0,>=0.10; extra == "notebook"
+Requires-Dist: nbconvert<8.0,>=7.0; extra == "notebook"
+Requires-Dist: ipykernel<7.0,>=6.0; extra == "notebook"
+Provides-Extra: dev
+Requires-Dist: pytest<9.0,>=7.4; extra == "dev"
+Requires-Dist: pytest-cov<7.0,>=4.1; extra == "dev"
+Requires-Dist: bandit<2.0,>=1.7; extra == "dev"
+
+# P6 Research Lab — Design Specification
+### Prepared for: Bel
+### Date: 2026-04-10
+### Classification: Internal Reference
+### Revision: 2 (split batch notebooks from interactive UI)
+
+---
+
+## 0. Purpose & Scope
+
+This document specifies a **research lab** extending the existing
+`WRAP_P6_BACKTEST.ipynb` / `WRAP_P6_DETECTOR_SWEEP.ipynb` pair with
+experimental infrastructure for five goals:
+
+1. **Strategy backtesting** with L3 data (fill-probability aware,
+   queue-priority aware — not just bar-close signal accuracy)
+2. **L1 ↔ L3 correlation** — pairing chart / L1 book features with L3
+   ground-truth events
+3. **L3 pattern label library** — discovery, labeling, and versioning of
+   recurring L3 event shapes with forward-return distributions
+4. **L1 feature training** — the feature-discovery harness that feeds
+   both the correlation engine and live deployment
+5. **Dual view of the order book + correlation engine** — live/replay
+   synchronous L3/L2/L1 rendering and runtime pattern matching
+
+### 0.1 Split between batch and interactive
+
+Revision 2 splits workloads along a clear boundary:
+
+| Workload kind | Lives where | Why |
+|---|---|---|
+| Long-running batch jobs (feature ranking, pattern mining, CPCV training, statistical sweeps) | Jupyter notebooks | Hours-long execution, tight iteration on code, rich pandas output |
+| Interactive visualization (triple view, live correlation display) | **p6-v2 web frontend** | Replay scrubber + WebSocket + chart already exist; notebook version would be a strictly worse static copy |
+| One-shot "what if" tools (virtual-order placement, pattern candidate review) | **p6-v2 web frontend** | User-driven, per-interaction, needs chart context |
+
+The logic itself lives in a new Python package `p6lab/` that both
+notebooks and the web server import. The split is about **who
+consumes** the library, not where the library itself lives.
+
+This lab's guiding principle is the **knowledge-distillation architecture**
+from [OB-reference.md:698-973](./OB-reference.md): L3 is the omniscient
+teacher, L1/L2 are the deployable students. Every component either labels
+with L3 truth, trains on L1/L2 features, or renders the gap for review.
+
+**Out of scope:** production live-trading wiring (Phase 6+ of the
+staircase plan), P2-P5 integration, C++ reimplementation.
+
+---
+
+## 1. Theoretical Foundation & Citations
+
+### 1.1 Source documents
+
+| Document | Purpose |
+|---|---|
+| [OB-reference.md](./OB-reference.md) | Microstructure reference + Sector 6 distillation architecture — §1 P6 robustness (L1-43), §2 seven L3-backtestable strategies (L59-121), §3 methodology bridges (L125-151), §4 L3/L2 correlation engine (L356-549), §5 knowledge distillation (L698-973), §6 fragility index (L1537-1774), §7 stress cascade library (L1057-2240), §8 synthetic augmentation (L1336-1537), §9 walk-forward CPCV (L1778-2056) |
+| [staircase-engine-plan-of-action.md](./staircase-engine-plan-of-action.md) | Phased roadmap — §1A immediate L3 strategies (L22-43), §1B backtest protocol (L44-72), §1C missing infra (L74-80), §3 trilevel phases (L187-331), §5 information-gain rule (L523) |
+| [wrap-p6-backtest-spec.md](./wrap-p6-backtest-spec.md) | Existing calibration notebook spec — the batch-analytics notebook pair this lab extends |
+
+### 1.2 Strategies the lab must enable
+
+From [OB-reference.md:59-121](./OB-reference.md), seven L3-backtestable classes:
+
+| # | Strategy | Deliverable |
+|---|---|---|
+| 1 | Optimal execution | Notebook 05 + UI virtual-order tool |
+| 2 | Queue priority alpha | Notebook 05 + UI virtual-order tool |
+| 3 | Toxic flow avoidance | Notebook 03 (feature), notebook 06 (regime filter) |
+| 4 | Spoofing-fade | Covered in WRAP_P6_BACKTEST §05 |
+| 5 | Iceberg ride | Covered in WRAP_P6_BACKTEST §05 |
+| 6 | Order anticipation | Notebook 04 (mining), notebook 07 (cascade) |
+| 7 | Information asymmetry (VPIN) | Notebook 03 (feature), notebook 06 (regime filter) |
+
+### 1.3 Stress cascade taxonomy
+
+From [OB-reference.md:1175-1288](./OB-reference.md): four cascade types —
+Type A Liquidity Withdrawal (slow burn), Type B Momentum Ignition
+(minutes-hours), Type C Grinding Correction (multi-day), Type D
+Cross-Instrument Contagion (minutes). Notebook 07 handles all four;
+the UI surfaces current fragility state for Type A/B early warning.
+
+---
+
+## 2. Lab Topology
+
+```
+workspace/myquantlab/notebooks/wrappers/
+├── WRAP_P6_BACKTEST.ipynb          (exists — calibration/validation)
+├── WRAP_P6_DETECTOR_SWEEP.ipynb    (exists — full-replay sweeps)
+│
+├── WRAP_P6_L1_FEATURE_LAB.ipynb    (new — notebook 03)
+├── WRAP_P6_PATTERN_MINING.ipynb    (new — notebook 04)
+├── WRAP_P6_EXECUTION_SIM.ipynb     (new — notebook 05, batch only)
+├── WRAP_P6_CORRELATION_LAB.ipynb   (new — notebook 06)
+└── WRAP_P6_CASCADE_LAB.ipynb       (new — notebook 07)
+
+workspace/myquantlab/src/p6lab/     (new shared package)
+├── __init__.py
+├── ingestion/
+│   ├── triple_view.py              (§3.1 — data prep, not rendering)
+│   ├── event_windowing.py          (§3.2)
+│   └── instrument_normalizer.py    (§3.3)
+├── features/
+│   ├── l1_features.py              (§4.1 — 16 features)
+│   ├── l2_features.py              (§4.2 — 12 features)
+│   ├── fragility_index.py          (§4.3 — 6 sub-indices)
+│   └── vpin.py                     (§4.4)
+├── patterns/
+│   ├── library.py                  (§5.1 — YAML registry + schema)
+│   ├── miner.py                    (§5.2 — HDBSCAN discovery)
+│   ├── labeler.py                  (§5.3 — forward outcome labeling)
+│   └── template_matcher.py         (§5.4 — cosine similarity)
+├── execution/
+│   ├── queue_tracker.py            (§6.1 — per-order position)
+│   ├── fill_simulator.py           (§6.2 — passive-order fill model)
+│   └── cost_model.py               (§6.3 — slippage + adverse selection)
+├── correlation/
+│   ├── engine.py                   (§7.1 — live L2 → L3 label matcher)
+│   ├── scorer.py                   (§7.2 — ensemble score + tiers)
+│   └── regime_conditioner.py       (§7.3 — VIX-tagged template selection)
+└── validation/
+    ├── cpcv.py                     (§8.1 — CPCV with cascade embargo)
+    ├── augmentation.py             (§8.2 — synthetic data augmentation)
+    └── information_gain.py         (§8.3 — must-beat-baseline gate)
+
+workspace/myquantlab/artifacts/p6lab/
+├── triple_view/                    (parquet: per-window L3+L2+L1+outcome)
+├── feature_logs/
+├── pattern_library/
+│   ├── library.yaml
+│   ├── templates/
+│   ├── outcomes/
+│   └── mined_candidates/
+├── execution_sims/
+├── correlation_runs/
+└── run_history/
+
+projects/p6-v2/web/                 (existing frontend — extended)
+├── index.html                      (add new routes/panels)
+├── css/dashboard.css               (extended)
+└── js/
+    ├── triple_view_panel.js        (new — §10.1)
+    ├── virtual_order_tool.js       (new — §10.2)
+    ├── pattern_review_queue.js     (new — §10.3)
+    ├── correlation_feed.js         (new — §10.4)
+    └── fragility_gauge.js          (new — §10.5)
+
+projects/p6-v2/server/
+├── replay_api.py                   (extended — §11.1 new endpoints)
+├── backtest_api.py                 (extended — §11.2 p6lab wiring)
+├── pattern_api.py                  (new — §11.3)
+├── correlation_api.py              (new — §11.4)
+└── fill_sim_api.py                 (new — §11.5)
+```
+
+**Notebook count: 5 new** (03, 04, 05, 06, 07). The original notebook 08
+(DUAL_VIEW) is dissolved into three UI surfaces (§10.1, §10.3, §10.4).
+
+---
+
+## 3. Shared Infrastructure — `p6lab.ingestion`
+
+### 3.1 Triple-view emitter (`triple_view.py`)
+
+Implements Phase 4 of the staircase plan ([staircase:L250-280](./staircase-engine-plan-of-action.md#L250-L280))
+and the dual-view methodology from [OB-reference.md:769-788](./OB-reference.md#L769-L788).
+
+**Responsibility:** given a raw replay, emit time-aligned triples:
+
+```python
+@dataclass(frozen=True)
+class TripleFrame:
+    timestamp_ms: int
+    symbol: str
+    # L3 truth — full order lifecycle slice for this window
+    l3_events: list[Order]
+    l3_book_snapshot: OrderBookSnapshot
+    # L2 shadow — aggregated per-level depth
+    l2_features: np.ndarray           # 12-dim (§4.2)
+    l2_book_vector: np.ndarray        # 40-dim book_shape_vector
+    # L1 footprint — top-of-book derived state
+    l1_features: np.ndarray           # 16-dim (§4.1)
+```
+
+**Window granularities:** 100ms fast / 1s standard / 5s slow, emitted in
+parallel to separate parquet files. Downstream consumers pick.
+
+**Important:** this module does *not* render anything. It only prepares
+data. All visualization goes through the frontend (§10). Notebooks 03-07
+read the parquet files it writes; the web server also reads them for
+replay-mode triple view.
+
+### 3.2 Event windowing (`event_windowing.py`)
+
+`WindowIterator` with pluggable anchoring strategies — burst-anchored for
+pattern mining (04), fixed-horizon for labeling (§5.3), fixed-length for
+correlation grids (06).
+
+### 3.3 Instrument normalizer (`instrument_normalizer.py`)
+
+Implements [OB-reference.md:453-468](./OB-reference.md#L453-L468): depth
+as ratio of 20-day median, spread in basis points, ATR-normalized price
+moves, self-normalizing book shape vector, VIX-tagged regime buckets
+(low <15, normal 15-25, elevated 25-35, high >35).
+
+Per-instrument backfill tables cached in
+`artifacts/p6lab/normalization/{symbol}_median_depth.parquet`.
+
+---
+
+## 4. Shared Infrastructure — `p6lab.features`
+
+### 4.1 L1 feature set (`l1_features.py`)
+
+16 features per [OB-reference.md:830-847](./OB-reference.md#L830-L847):
+
+| # | Feature | Update | Formula |
+|---|---|---|---|
+| 1 | `spread_ticks` | every L1 | `(best_ask - best_bid) / tick_size` |
+| 2 | `spread_bps_l1` | every L1 | `spread_ticks × tick_size / mid × 10000` |
+| 3 | `best_bid_size` | every L1 | raw |
+| 4 | `best_ask_size` | every L1 | raw |
+| 5 | `top_imbalance` | every L1 | `(bid_sz - ask_sz) / (bid_sz + ask_sz)` |
+| 6 | `bid_refresh_rate` | 100ms roll | passive adds at best bid per second |
+| 7 | `ask_refresh_rate` | 100ms roll | passive adds at best ask per second |
+| 8 | `bid_retreat_velocity` | 250ms roll | negative Δ best_bid per second |
+| 9 | `ask_advance_velocity` | 250ms roll | positive Δ best_ask per second |
+| 10 | `spread_compression_rate` | 250ms roll | Δ spread per second (negative = tightening) |
+| 11 | `tick_direction_streak` | every L1 | consecutive same-sign Δ mid |
+| 12 | `tick_acceleration` | 500ms roll | `d²(tick_count)/dt²` |
+| 13 | `trade_at_bid_ratio` | 1s roll | `trades_at_bid / total_trades` |
+| 14 | `size_spike_ratio` | 1s roll | `max_trade_size / median_trade_size` |
+| 15 | `microprice_velocity` | 250ms roll | Δ microprice per second |
+| 16 | `l1_shape_vector` | every L1 | `[bid_sz, ask_sz, spread_bps, imbalance]` normalized |
+
+Exports `compute_l1_features(snapshot, history) → np.ndarray[16]` for
+per-snapshot use (called from web server at replay time) and
+`compute_l1_series(snapshots) → pd.DataFrame` for bulk backtesting
+(called from notebooks).
+
+### 4.2 L2 feature set (`l2_features.py`)
+
+12 features per [OB-reference.md:432-451](./OB-reference.md#L432-L451): bid_ask_imbalance,
+depth_ratio, weighted_mid, spread_bps, depth_within_pct, imbalance_ema,
+depth_change_rate_5s, depth_change_rate_30s, level_persistence,
+refresh_rate, book_shape_vector (40-dim), trade_flow_toxicity (VPIN).
+
+### 4.3 Fragility Index (`fragility_index.py`)
+
+Direct port of [OB-reference.md:1552-1696](./OB-reference.md#L1552-L1696).
+Six sub-indices (DF, CF, RF, SF, FT, CIS) and two composites:
+
+```python
+FI_fast = 0.35 × RF + 0.35 × SF + 0.30 × FT                # L1 speed, <5ms
+FI_full = 0.20 × DF + 0.15 × CF + 0.20 × RF + \
+          0.15 × SF + 0.15 × FT + 0.15 × CIS               # L2 speed, <50ms
+```
+
+Used by notebook 07 (cascade validation) and surfaced live by
+[fragility_gauge.js](#105-fragility-gauge-panel) (§10.5).
+
+Validation criteria from [OB-reference.md:1734-1748](./OB-reference.md#L1734-L1748):
+AUC > 0.70 for predicting >2 ATR moves within 30m, FI > 0.5 at least 2m
+before 50% of cascades, FP rate <30% at FI > 0.7.
+
+### 4.4 VPIN (`vpin.py`)
+
+Volume-synchronized PIN from [OB-reference.md:1625-1644](./OB-reference.md#L1625-L1644).
+Lee-Ready or BVC classification. Feeds `l2_features.trade_flow_toxicity`
+and `fragility_index.FT`.
+
+---
+
+## 5. Pattern Library (`p6lab.patterns`)
+
+### 5.1 Library schema (`library.py`)
+
+Versioned YAML registry at `artifacts/p6lab/pattern_library/library.yaml`:
+
+```yaml
+version: 1
+generated: 2026-04-10
+patterns:
+  iceberg_accumulation:
+    l3_signature: |
+      refill_count ≥ 4, max_visible_size ≤ 8, total_volume ≥ 30
+    l2_manifestation: |
+      stable level, no depletion despite prints, refresh_rate > 8/sec
+    l1_footprint: |
+      tight spread, elevated BBO refresh rate, stable best_bid_size
+    outcome_distribution:
+      horizon_1m:  {mean_atr: 0.42, std: 0.81, hit_rate: 0.61, n: 2341}
+      horizon_5m:  {mean_atr: 0.89, std: 1.20, hit_rate: 0.67, n: 2341}
+    min_sample_size: 200
+    regime_specific: true
+    instruments: [NQ, ES]
+    confidence_tier_cutoffs: {A: 0.85, B: 0.72, C: 0.60}
+    status: active   # or candidate, retired
+    validation_hash: sha256:...
+```
+
+Pydantic `PatternDefinition` model for validation. Read by notebooks 04
+and 06, by the pattern review queue UI (§10.3), and at runtime by the
+live correlation engine (§10.4, §11.4).
+
+**Minimum sample size rule:** 200 occurrences minimum per
+[OB-reference.md:805-809](./OB-reference.md#L805-L809). Below threshold →
+`status: candidate`, no outcome distribution until promoted.
+
+### 5.2 Unsupervised miner (`miner.py`)
+
+HDBSCAN-based pattern discovery beyond the seven hand-coded ones:
+
+1. Burst-anchor windowing via `event_windowing.WindowIterator`
+2. 30-dim event shape vector per window (add/cancel ratio, burst
+   intensity, spread dynamics, level crossings, size percentiles,
+   inter-event intervals, side asymmetry, lifecycle entropy)
+3. Instrument normalization (§3.3)
+4. HDBSCAN with `min_cluster_size=50`, `min_samples=25`
+5. Forward-outcome labeling at 1m/5m/15m/1h
+6. Filter: n≥200, hit_rate_5m > 0.55, Sharpe > 0.3, cosine distance to
+   existing patterns > 0.3
+7. Write to `artifacts/p6lab/pattern_library/mined_candidates/` as
+   parquet (one row per candidate cluster) + one exemplar window set
+   per cluster
+
+The **promotion decision** happens in the web UI, not in the notebook:
+notebook 04 writes candidates to disk, the `pattern_review_queue.js`
+frontend panel (§10.3) loads them one at a time in the triple view and
+lets a human accept / reject / defer with one click. Accept writes to
+`library.yaml` with `status: mined_approved`.
+
+### 5.3 Labeler (`labeler.py`)
+
+`PatternOutcome` dataclass with raw + ATR-normalized moves at 1m/5m/15m/1h
+and continuation/reversal/neutral classification vs per-instrument ATR
+threshold (0.5 ATR per [OB-reference.md:805-809](./OB-reference.md#L805-L809)).
+
+### 5.4 Template matcher (`template_matcher.py`)
+
+Cosine similarity on `l2_features.book_shape_vector` time series, per
+[OB-reference.md:470-487](./OB-reference.md#L470-L487):
+
+```
+ensemble_score = 0.40 × template_match
+               + 0.35 × feature_distance_mahalanobis
+               + 0.25 × contextual_score          # TOD, VIX, volume
+```
+
+Mahalanobis covariance via Ledoit-Wolf shrinkage; fallback to Euclidean
+if condition number κ(Σ) > 1000. Consumed by notebook 06 (as ML baseline)
+and by the live correlation engine at runtime (§7.1, §10.4).
+
+---
+
+## 6. Execution (`p6lab.execution`)
+
+**Critical:** this module is shared between the batch notebook (05) and
+the interactive UI tool (§10.2). Same library, two consumers.
+
+### 6.1 Queue tracker (`queue_tracker.py`)
+
+Per-order absolute queue position tracker ingesting MBO events:
+
+```python
+class QueueTracker:
+    def place_limit_order(
+        self, timestamp_ms: int, side: Side, price: float, size: float
+    ) -> OrderHandle: ...
+
+    def on_event(self, event: Order) -> None:
+        """Update all tracked orders: advance on fills ahead of us,
+        demote on cancels ahead of us, etc."""
+
+    def get_position(self, handle: OrderHandle) -> QueuePosition:
+        """Absolute position from front of queue, in contracts."""
+```
+
+This is the missing infrastructure flagged in
+[staircase:L74-80](./staircase-engine-plan-of-action.md#L74-L80).
+
+### 6.2 Fill simulator (`fill_simulator.py`)
+
+Given a simulated limit order at time t, walk the event stream forward
+and produce:
+
+```python
+@dataclass(frozen=True)
+class FillOutcome:
+    filled: bool
+    filled_size: float
+    fill_timestamp_ms: int | None
+    queue_position_at_entry: float
+    queue_position_at_fill: float | None
+    adverse_ticks_at_fill: int
+    realized_pnl: float
+    fill_reason: Literal["full", "partial", "adverse_exit", "timeout", "cancelled"]
+    # New: per-step trajectory for UI rendering
+    trajectory: list[QueueSnapshot]   # empty if run in bulk mode
+```
+
+**Two modes:**
+- `simulate_bulk(orders)` — vectorized, no trajectory, called by notebook 05
+  to run 10,000+ trades for statistical P(fill) distributions
+- `simulate_interactive(order)` — returns full trajectory list for
+  per-step animation, called by the UI virtual-order tool (§10.2)
+
+### 6.3 Cost model (`cost_model.py`)
+
+Realistic cost decomposition: crossed-spread cost, commission,
+adverse-selection cost from `FillOutcome.adverse_ticks_at_fill`,
+opportunity cost on unfilled orders. Replaces the naive
+`slippage + commission` model in `WRAP_P6_BACKTEST.ipynb` §07.
+
+---
+
+## 7. Correlation Engine (`p6lab.correlation`)
+
+### 7.1 Engine (`engine.py`)
+
+Runtime module: live L2 (+ optional L1) state → matched patterns with
+scores. Pure-Python implementation of
+[OB-reference.md:356-549](./OB-reference.md#L356-L549).
+
+```python
+class CorrelationEngine:
+    def __init__(
+        self,
+        library: PatternLibrary,
+        matcher: TemplateMatcher,
+        scorer: EnsembleScorer,
+        regime_classifier: Callable,
+    ): ...
+
+    def match(
+        self,
+        l2_window: pd.DataFrame,      # last 30s-5m of L2 features
+        l1_window: pd.DataFrame | None,
+        context: MatchContext,        # TOD, VIX regime, instrument
+    ) -> list[PatternMatch]:
+        """All patterns matching above threshold, sorted by score."""
+```
+
+Latency target: <50ms per match ([OB-reference.md:476](./OB-reference.md#L476)).
+Unit-tested against synthetic inputs before any consumer wires it up.
+
+**Consumers:** notebook 06 (training + validation), `correlation_api.py`
+(server wiring, §11.4), `correlation_feed.js` (UI, §10.4).
+
+### 7.2 Scorer (`scorer.py`)
+
+Confidence tier assignment per [OB-reference.md:500-507](./OB-reference.md#L500-L507):
+>0.85 = A (auto-alert + sizing), 0.72-0.85 = B (alert only), 0.60-0.72 =
+C (log only), <0.60 = discard.
+
+### 7.3 Regime conditioner (`regime_conditioner.py`)
+
+Per-instrument, per-VIX-bucket template selection
+([OB-reference.md:464-466](./OB-reference.md#L464-L466)).
+
+---
+
+## 8. Validation (`p6lab.validation`)
+
+### 8.1 CPCV (`cpcv.py`)
+
+Combinatorial Purged Cross-Validation with 14-day cascade-event embargo
+per [OB-reference.md:1804-1905](./OB-reference.md#L1804-L1905). Wraps
+`specs/cv/cv_combinatorial.py` with the extra cascade-timestamp
+constraint. Required for notebook 07 and available to 03/04/06.
+
+### 8.2 Synthetic augmentation (`augmentation.py`)
+
+Port of [OB-reference.md:1336-1537](./OB-reference.md#L1336-L1537): time
+stretch/compress, depth scaling ±20%, volatility shift ±1 ATR,
+cross-instrument transfer, phase duration jitter. Each augmented
+sample tagged with `augmentation_method`; notebook 07 enforces "must
+beat original-only baseline" per
+[OB-reference.md:1504-1509](./OB-reference.md#L1504-L1509).
+
+### 8.3 Information-gain gate (`information_gain.py`)
+
+Enforces [staircase:L523](./staircase-engine-plan-of-action.md#L523):
+"No component gets added unless it beats baseline by measurable margin."
+
+```python
+def must_beat_baseline(
+    candidate_metric: float,
+    baseline_metric: float,
+    min_improvement: float = 0.02,
+    n_bootstrap: int = 1000,
+) -> DecisionReport: ...
+```
+
+Used by notebooks 03/04/06 when promoting features or patterns.
+
+---
+
+## 9. Notebook Specifications (batch workloads)
+
+### 9.1 Notebook 03 — `WRAP_P6_L1_FEATURE_LAB.ipynb`
+
+**Purpose:** build and validate the 16-feature L1 set + 12-feature L2
+set. Answers: *which book-state features have forward-return edge?*
+
+**Sections:** 00 env → 01 triple-view replay (writes `triple_view/*.parquet`
+for all downstream notebooks and the web server) → 02 L1 features → 03
+L2 features → 04 univariate analysis (Spearman, ROC-AUC, Brier) → 05
+mutual information vs forward direction → 06 RF + SHAP importance with
+PurgedKFold → 07 redundancy pruning → 08 information-gain gate (each
+feature must beat `bid_ask_imbalance` baseline by ≥2% AUC) → 09
+Fragility Index validation → 10 report.
+
+**Produces:** canonical `triple_view/{symbol}.parquet` consumed by every
+other notebook and by the web server for live L1/L2 feature rendering.
+
+### 9.2 Notebook 04 — `WRAP_P6_PATTERN_MINING.ipynb`
+
+**Purpose:** unsupervised L3 pattern discovery beyond the seven
+hand-coded patterns.
+
+**Sections:** 00 env → 01 load triple-view → 02 burst windowing → 03
+30-dim event shape extraction → 04 UMAP projection (visual only) → 05
+HDBSCAN clustering → 06 cluster profiling → 07 forward-outcome labeling
+→ 08 distance-to-existing check → 09 candidate filter → 10 **write
+candidates to `mined_candidates/*.parquet` with exemplar windows** for
+human review in the UI (§10.3).
+
+**Hand-off:** this notebook does *not* decide whether candidates get
+promoted. It writes them to disk; the web UI pattern review queue
+(§10.3) is where a human accepts or rejects each one. Only accepted
+patterns reach `library.yaml` with `status: mined_approved`.
+
+### 9.3 Notebook 05 — `WRAP_P6_EXECUTION_SIM.ipynb` (batch only)
+
+**Purpose:** statistical fill-probability and queue-priority analysis
+over large trade populations.
+
+**Sections:** 00 env → 01 replay with queue tracker → 02 signal source
+(aggregator frame log + correlation engine output) → 03 bulk passive
+simulation via `fill_simulator.simulate_bulk` → 04 queue-position
+conditional P(fill) by quintile → 05 aggressive vs passive entry
+comparison → 06 step-ahead economics → 07 signal-to-tradeable
+conversion rate per strategy class → 08 realistic PnL backtest → 09
+report.
+
+**Explicitly NOT in this notebook:** single-order "place here and see what
+happens" exploration. That lives in [§10.2](#102-virtual-order-tool) as
+an interactive UI tool. Both consume `p6lab.execution.fill_simulator`;
+the split is between `simulate_bulk` (notebook) and
+`simulate_interactive` (UI).
+
+### 9.4 Notebook 06 — `WRAP_P6_CORRELATION_LAB.ipynb`
+
+**Purpose:** train and validate the correlation engine. Answers: *how
+well can L1+L2 features predict the L3 pattern label the omniscient
+teacher saw?*
+
+**Sections:** 00 env → 01 load triple-view + library → 02 L3 label
+assignment (multi-label OK) → 03 dataset construction
+`X = concat(L1, L2, fragility)` → 04 PurgedKFold RF + LightGBM → 05
+per-pattern precision-recall (target >65% per
+[OB-reference.md:485](./OB-reference.md#L485)) → 06 template-matcher
+baseline (ML must beat it by ≥2%) → 07 two-stage architecture
+(L1-only Stage 1 + L1+L2 Stage 2) → 08 correlation heatmap (L1↔L3
+mutual information) → 09 regime conditioning → 10 engine dry run
+with <50ms latency check → 11 information-gain gate → 12 report +
+**model export** to `correlation_runs/models/{version}.pkl` for the
+web server to load (§11.4).
+
+### 9.5 Notebook 07 — `WRAP_P6_CASCADE_LAB.ipynb`
+
+**Purpose:** cascade detection and forecasting. Answers: *when should we
+abstain or flip to risk-off?*
+
+**Sections:** 00 env → 01 historical cascade event identification → 02
+pre-cascade window extraction → 03 CPCV with 14-day embargo → 04 FI
+predictive power (AUC target >0.70) → 05 lead-time distribution
+(≥2min before 50% of cascades) → 06 FP rate at FI > 0.7 (<30% target)
+→ 07 synthetic augmentation comparison vs baseline → 08 per-cascade-type
+classifier (Type A/B/C/D) → 09 cross-instrument stress (CIS) → 10 report
++ **FI model export** for the web server fragility gauge (§10.5, §11.4).
+
+---
+
+## 10. Frontend Specifications (interactive workloads)
+
+All five UI components extend the existing `projects/p6-v2/web/` frontend.
+They reuse the existing WebSocket client
+([websocket_client.js](../../projects/p6-v2/web/js/websocket_client.js)),
+chart ([chart.js](../../projects/p6-v2/web/js/chart.js)), replay
+controls ([replay_controls.js](../../projects/p6-v2/web/js/replay_controls.js)),
+and depth overlay
+([depth_overlay.js](../../projects/p6-v2/web/js/depth_overlay.js)).
+
+### 10.1 Triple View Panel
+
+**File:** `web/js/triple_view_panel.js` (new)
+**Activated by:** toggle button in existing
+[control_panel.js](../../projects/p6-v2/web/js/control_panel.js)
+
+**Layout:** three stacked panels with a shared x-axis and shared
+scrubber. When active, the main chart shrinks to the top 40%, the new
+panels occupy the remaining 60%:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│ Main chart (40% height) — existing lightweight-charts candles│
+├─────────────────────────────────────────────────────────────┤
+│ L3 event lane (20% height) — NEW                             │
+│   Per-order timeline: add / modify / cancel / fill events    │
+│   Queue-position bars and lifecycle colors                   │
+│   Hover → tooltip with order id + full lifecycle             │
+├─────────────────────────────────────────────────────────────┤
+│ L2 depth heatmap (20% height) — NEW                          │
+│   20-level heat, bid blue / ask red                          │
+│   Template-match cosine similarity trace on top axis         │
+├─────────────────────────────────────────────────────────────┤
+│ L1 footprint (20% height) — NEW                              │
+│   BBO line + spread shading + BBO refresh markers            │
+│   Tick-direction-streak + tick-acceleration subplot          │
+└─────────────────────────────────────────────────────────────┘
+  shared scrubber ← existing replay_controls.js drives this
+```
+
+**Data source:** new WebSocket message type `triple_frame` streamed from
+the server at replay time (§11.1). Payload schema matches
+`TripleFrame` dataclass from §3.1 but in JSON form.
+
+**Replay mode:** reads from `artifacts/p6lab/triple_view/{symbol}.parquet`
+on disk via a new `/api/triple_view` endpoint (§11.1). Live mode: computed
+on-the-fly by the engine runner as frames arrive.
+
+**Synchronization:** clicking any panel at time t highlights
+corresponding frames in the other two. Uses the existing replay
+scrubber — no new time-axis code.
+
+**Why this beats a notebook:** in a notebook, triple-view is a static
+matplotlib render of a time window you pick by hand. In the UI it's a
+live scrubbable replay, same one you already use for debugging the
+pipeline. Zero new infrastructure cost, strictly more powerful.
+
+### 10.2 Virtual Order Tool
+
+**File:** `web/js/virtual_order_tool.js` (new)
+**Activated by:** toolbar button "place virtual order"
+
+**Interaction:**
+1. User enables virtual-order mode with a toolbar toggle
+2. Clicks any price level on the chart or DOM at any replay time
+3. A modal asks: side (buy/sell), size (contracts), order type (limit /
+   market / step-ahead), max horizon (seconds)
+4. Frontend POSTs to `/api/fill_sim/interactive` (§11.5)
+5. Server calls `p6lab.execution.fill_simulator.simulate_interactive`
+   and returns the full trajectory
+6. Frontend animates the order through time on the chart:
+   - Queue-position bar shrinking as orders ahead get filled or cancelled
+   - Green flash on fill, red flash on adverse exit, grey on timeout
+   - Tooltip showing current P(fill), adverse ticks, realized PnL
+7. After completion, a sidebar panel shows the `FillOutcome` summary
+
+**Why this beats a notebook:** a notebook can show aggregate statistics
+("25% of orders at quintile 3 fill within 2m") but it cannot show **this
+specific order** at **this specific moment in this specific book state**.
+That's the question a trader has at 10:31:04 when looking at a suspicious
+spoof signal — and it's pure UI work.
+
+The bulk-statistical version lives in notebook 05. **Both share
+`p6lab.execution.fill_simulator` — one library, two entry points.**
+
+### 10.3 Pattern Review Queue
+
+**File:** `web/js/pattern_review_queue.js` (new)
+**Route:** new page `/review` or modal overlay in the main app
+
+**Workflow:**
+1. After notebook 04 runs, it writes
+   `artifacts/p6lab/pattern_library/mined_candidates/*.parquet` — one row
+   per candidate cluster with its exemplar window timestamps
+2. User opens the review queue page
+3. Server reads `mined_candidates/` via new `/api/patterns/candidates`
+   (§11.3)
+4. Frontend loads one candidate at a time, auto-scrolls the replay to
+   the first exemplar, and renders the Triple View Panel (§10.1)
+5. Three buttons: **Accept** (promotes to `library.yaml` with
+   `status: mined_approved`), **Reject** (marks `rejected` in
+   `mined_decisions.parquet` so notebook 04 can skip it next run),
+   **Next exemplar** (scrolls to the next exemplar of the same candidate
+   for a second look)
+6. Progress bar: "reviewed 23 / 87 candidates"
+7. After review session, server writes decisions and refreshes library
+
+**Why this beats a notebook:** notebook 08 as originally spec'd would
+have rendered matplotlib grids of candidates with ipywidget buttons.
+That's strictly worse than a purpose-built page: clickable triple view,
+replay-synced context, and you can review ten candidates in the time
+it takes a notebook to render one matplotlib figure.
+
+This is the **human-in-the-loop gate** between unsupervised mining and
+model training. Notebook 06 trains only on library entries with
+`status ∈ {active, mined_approved}` — nothing unvetted reaches the
+correlation engine.
+
+### 10.4 Correlation Engine Feed
+
+**File:** `web/js/correlation_feed.js` (new)
+**Panel:** new sidebar panel beside the existing signal_bar
+
+**What it shows:**
+- Live stream of pattern matches from the running `CorrelationEngine`
+- Each match is a row: timestamp, pattern_id, ensemble_score, tier
+  (A/B/C), expected direction, expected move (ATR-normalized)
+- Color by tier: green A, yellow B, grey C
+- Click a row → replay jumps to that timestamp, triple view pops open
+  at the match window
+- Running histogram: match rate per minute, by tier
+
+**Data source:** new WebSocket message type `correlation_match` pushed
+by `correlation_api.py` (§11.4) whenever the engine emits a match above
+the C tier threshold (0.60).
+
+**Latency:** engine runs in the server's engine_runner loop alongside
+the existing p6-v2 pipeline. Target <50ms per frame added to the
+existing loop budget. Benchmarked in notebook 06 §10.
+
+**Model loading:** server loads the latest approved model file from
+`correlation_runs/models/` on startup. Reload endpoint
+`POST /api/correlation/reload` swaps models without restarting the
+server (§11.4).
+
+**Why this beats a notebook:** the correlation engine's real job is
+real-time inference on live / replayed L2. A notebook could dry-run it
+on canned data but couldn't test the full live loop — that's exactly
+what the UI + server integration tests.
+
+### 10.5 Fragility Gauge Panel
+
+**File:** `web/js/fragility_gauge.js` (new)
+**Panel:** compact gauge in the existing stats header strip
+
+**What it shows:**
+- Live `FI_fast` (large gauge, <5ms update, red-yellow-green arc)
+- Live `FI_full` (smaller gauge, <50ms update)
+- Six sub-index bars below: DF / CF / RF / SF / FT / CIS
+- Color flip on threshold crossings: 0.5 → yellow, 0.7 → red
+- On FI_fast > 0.6, the `signal_bar.js` pattern detection threshold
+  automatically lowers from 0.55 to 0.40 per
+  [OB-reference.md:1701](./OB-reference.md#L1701)
+- On FI_full > 0.7, the `backtest_controls.js` max size multiplier drops
+  to 0.5 per [OB-reference.md:1721-1729](./OB-reference.md#L1721-L1729)
+
+**Data source:** new WebSocket message type `fragility_update` pushed
+on every snapshot from the engine runner.
+
+**Why this beats a notebook:** FI is fundamentally a real-time signal.
+Notebook 07 validates its historical predictive power; the UI is where
+it actually warns you about impending cascades. Two separate jobs for
+the same library.
+
+---
+
+## 11. Server Integration (`projects/p6-v2/server/`)
+
+### 11.1 `replay_api.py` extensions
+
+New endpoints:
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/api/triple_view` | Query param `symbol`, `start_ms`, `end_ms`, `granularity`. Reads `artifacts/p6lab/triple_view/{symbol}.parquet`, returns JSON window. |
+| WebSocket msg | `triple_frame` | Live-mode emission from engine_runner at each snapshot, schema mirrors `TripleFrame` |
+
+The existing replay pipeline already streams per-frame data; this just
+adds one more message type.
+
+### 11.2 `backtest_api.py` extensions
+
+Wires `p6lab.execution.cost_model` into the existing
+`BacktestRunner.score()` path so that existing backtest runs get
+realistic costs alongside the naive model. Toggle via query param
+`cost_model=naive|realistic`.
+
+### 11.3 `pattern_api.py` (new)
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/api/patterns/library` | Current `library.yaml` as JSON |
+| GET | `/api/patterns/candidates` | Lists mined candidates from notebook 04 |
+| GET | `/api/patterns/candidate/{id}` | Single candidate with exemplar window timestamps |
+| POST | `/api/patterns/candidate/{id}/accept` | Promotes to `library.yaml` |
+| POST | `/api/patterns/candidate/{id}/reject` | Marks rejected in `mined_decisions.parquet` |
+
+### 11.4 `correlation_api.py` (new)
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/api/correlation/status` | Current engine state + loaded model version |
+| POST | `/api/correlation/reload` | Reload latest `correlation_runs/models/*.pkl` |
+| WebSocket msg | `correlation_match` | Server pushes engine output on each match |
+| WebSocket msg | `fragility_update` | Server pushes FI values on each snapshot |
+
+Runtime wiring: `engine_runner.py` instantiates `CorrelationEngine` on
+startup (loading the latest approved model), runs it in the main loop
+after each `OrderBookMetaPipeline.run()` call, publishes matches to the
+WebSocket.
+
+### 11.5 `fill_sim_api.py` (new)
+
+| Method | Path | Purpose |
+|---|---|---|
+| POST | `/api/fill_sim/interactive` | Body: order spec + timestamp. Calls `fill_simulator.simulate_interactive`, returns full `FillOutcome` with trajectory. |
+
+Used exclusively by the virtual-order tool (§10.2). Batch notebook 05
+imports `fill_simulator.simulate_bulk` directly; it does not go
+through this API.
+
+---
+
+## 12. Data Flow Summary
+
+```
+raw .dbn.zst ──► ReplayFeed (existing)
+                      │
+                      ▼
+              OrderBookMetaPipeline (existing)
+                      │
+                      ├─────► p6lab.ingestion.triple_view
+                      │              │
+                      │              ▼
+                      │       triple_view parquet
+                      │       (offline, for notebooks)
+                      │              │
+                      │              ├──► Notebook 03 ──► feature ranking
+                      │              ├──► Notebook 04 ──► mined candidates
+                      │              ├──► Notebook 05 ──► bulk execution stats
+                      │              ├──► Notebook 06 ──► correlation model
+                      │              └──► Notebook 07 ──► cascade/FI model
+                      │
+                      ▼
+              p6lab.correlation.CorrelationEngine (live)
+                      │  (loaded model from notebook 06)
+                      │
+                      ▼
+              server/correlation_api.py
+                      │
+                      ├─ WebSocket: triple_frame ────► Triple View Panel (§10.1)
+                      ├─ WebSocket: correlation_match ► Correlation Feed (§10.4)
+                      └─ WebSocket: fragility_update ─► Fragility Gauge (§10.5)
+
+user click ──► virtual_order_tool.js ──► POST /api/fill_sim/interactive
+                                               │
+                                               ▼
+                                       p6lab.execution.fill_simulator
+                                       .simulate_interactive
+                                               │
+                                               ▼
+                                       trajectory JSON ──► chart animation
+
+mined_candidates.parquet ──► pattern_review_queue.js ──► accept/reject
+                                               │
+                                               ▼
+                                       library.yaml (status change)
+                                               │
+                                               ▼
+                                       Notebook 06 picks up new patterns
+                                       on next run
+```
+
+---
+
+## 13. Run Order & Dependency Graph
+
+```
+Already built: WRAP_P6_BACKTEST + WRAP_P6_DETECTOR_SWEEP
+                         │
+                         ▼
+              ┌─────────────────────┐
+              │ Notebook 03         │
+              │ L1_FEATURE_LAB      │◄── First; writes triple_view parquet
+              │                     │    that every other notebook + the
+              │                     │    web server depend on
+              └──────────┬──────────┘
+                         │
+        ┌────────────────┼────────────────┐
+        │                │                │
+        ▼                ▼                ▼
+┌──────────────┐ ┌──────────────┐ ┌──────────────┐
+│ Notebook 04  │ │ Notebook 07  │ │ Notebook 05  │
+│ PATTERN_     │ │ CASCADE_LAB  │ │ EXECUTION_   │
+│ MINING       │ │              │ │ SIM (batch)  │
+└──────┬───────┘ └──────┬───────┘ └──────────────┘
+       │                │
+       │                │          ┌────────────────────────┐
+       │                │          │ UI (parallel build):   │
+       │                │          │ §10.1 Triple View      │
+       │                │          │ §10.2 Virtual order    │
+       │                │          │ §10.5 Fragility gauge  │
+       │                │          └────────────────────────┘
+       │                │                    ▲
+       │                │                    │ §10.5 consumes
+       │                └────────────────────┘    FI model from 07
+       │
+       ▼
+┌──────────────┐
+│ §10.3 Pattern│
+│ Review Queue │◄── UI work; gates what notebook 06 trains on
+│ (UI)         │
+└──────┬───────┘
+       │ approved patterns
+       ▼
+┌──────────────┐
+│ Notebook 06  │
+│ CORRELATION_ │
+│ LAB          │
+└──────┬───────┘
+       │ trained model
+       ▼
+┌──────────────┐
+│ §10.4        │
+│ Correlation  │
+│ Feed (UI)    │
+└──────┬───────┘
+       │
+       ▼
+Loop back — rerun notebook 05 with correlation engine signals
+to measure tradeable-PnL improvement over raw p6-v2 aggregator.
+```
+
+**Critical ordering constraints:**
+1. Notebook 03 must run first — it writes the canonical `triple_view`
+   parquet consumed by everyone else including the web server
+2. UI pattern review queue (§10.3) sits between notebook 04 and
+   notebook 06 — no unvetted cluster reaches model training
+3. UI fragility gauge (§10.5) depends on notebook 07's exported FI
+   model; can stub with baseline weights until then
+4. UI correlation feed (§10.4) depends on notebook 06's exported
+   model; can stub with template matcher alone until then
+
+---
+
+## 14. Data Requirements
+
+| Deliverable | Minimum data | Rationale |
+|---|---|---|
+| Notebook 03 | 1 month × 1 instrument | SHAP stability on ≥500k rows |
+| Notebook 04 | 3 months × 2 instruments | 200 occurrences per cluster minimum |
+| Notebook 05 | 1 week × 1 instrument | Queue sim is compute-bound |
+| Notebook 06 | 3 months × 2 instruments | Multi-label classifier |
+| Notebook 07 | 12 months × 4 instruments | Cascades rare; CPCV shrinks training set |
+| UI §10.1 Triple View | single-day replay | Live panel |
+| UI §10.2 Virtual order | single-day replay | Interactive one-order-at-a-time |
+| UI §10.3 Pattern review | notebook 04 output | One-shot review session |
+| UI §10.4 Correlation feed | notebook 06 output | Live inference |
+| UI §10.5 Fragility gauge | notebook 07 output | Live FI stream |
+
+Check current files in [p6-v2/data/](../../projects/p6-v2/data/) before
+running. ES + NQ are the minimum symbol set; CL + GC unlock notebook 07
+cross-instrument stress.
+
+---
+
+## 15. Open Questions & Risks
+
+### 15.1 Queue tracker requires order IDs in the snapshot
+
+`p6lab.execution.queue_tracker` needs per-order identifiers in the MBO
+stream. Databento provides them but the current p6-v2 `OrderBookSnapshot`
+aggregates at level. **Action:** add a `preserve_order_ids: bool` flag to
+`ReplayFeed.__init__` before building notebook 05 or the virtual order
+tool.
+
+### 15.2 Synthetic L2/L1 fidelity
+
+Triple-view downsamples L3 events into synthetic L2/L1 snapshots
+(100ms/1s/5s per [OB-reference.md:776](./OB-reference.md#L776)). If the
+synthetic L2 diverges from a real L2 consumer's view, models trained on
+it won't deploy. **Action:** compare one overlapping day against a real
+L2 feed before promoting any notebook 06 models to the UI correlation
+feed (§10.4).
+
+### 15.3 WebSocket message rate
+
+Triple view + correlation feed + fragility gauge all push on every
+snapshot. At 100ms frame rate that's ~30 KB/s/channel × 3 channels =
+~90 KB/s sustained. Acceptable on localhost; fine on LAN. If moving to
+remote browser, add a per-channel throttle flag (e.g. triple_frame
+throttled to 1/sec in remote mode).
+
+### 15.4 UI build framework choice
+
+Existing p6-v2 frontend is vanilla JS + lightweight-charts — no React,
+no build step. New panels should follow the same pattern for
+consistency. Complex interactions (virtual order tool trajectory
+animation) might benefit from a small state library but **do not
+introduce React or a bundler** unless the complexity warrants it. Keep
+the existing conventions.
+
+### 15.5 Pattern library versioning
+
+`library.yaml` versioning is flat (single monotonic integer). The UI
+review queue writes updates transactionally via `pattern_api.py` (file
+lock + atomic rename). If two researchers review simultaneously, last
+write wins — acceptable for a single-user tool, flag if it becomes
+multi-user.
+
+### 15.6 HDBSCAN reproducibility
+
+HDBSCAN clusters are not stable across replays with different event
+orderings. **Action:** add `random_state` to `miner.mine()` and persist
+it in `mined_candidates.parquet` alongside cluster ids.
+
+### 15.7 Information-gain baselines
+
+Baseline choices matter. Documented per-notebook:
+- Notebook 03: L1 feature baseline = `bid_ask_imbalance` single feature
+- Notebook 04: pattern baseline = p6-v2 aggregated confidence
+- Notebook 06: correlation model baseline = template matcher alone
+
+Changes to baselines require a notebook version bump and a re-run of
+the information-gain gate.
+
+### 15.8 Cascade event labeling protocol
+
+Notebook 07 §01 identifies cascades by ex-post rule (>2 ATR in 30m).
+Classification into Type A/B/C/D is subjective. **Action:** write
+`artifacts/p6lab/cascade_labeling_protocol.md` before notebook 07 runs.
+
+---
+
+## 16. Deliverables Summary
+
+| Category | Deliverable | Location |
+|---|---|---|
+| Python package | `p6lab/` shared library | `workspace/myquantlab/src/p6lab/` |
+| Notebooks | 5 new wrappers (03, 04, 05, 06, 07) | `workspace/myquantlab/notebooks/wrappers/` |
+| Frontend JS | 5 new UI modules | `projects/p6-v2/web/js/` |
+| Server APIs | `replay_api.py` + `backtest_api.py` extensions; 3 new files (`pattern_api.py`, `correlation_api.py`, `fill_sim_api.py`) | `projects/p6-v2/server/` |
+| Artifacts | Triple view, feature logs, pattern library, execution sims, correlation runs | `workspace/myquantlab/artifacts/p6lab/` |
+| Docs | Cascade labeling protocol | `artifacts/p6lab/cascade_labeling_protocol.md` |
+| Docs | This spec | `workspace-principal/reports/p6-notebook-lab-spec.md` |
+
+---
+
+## 17. Build Order Recommendation
+
+Revised to maximize parallelism between notebook work and UI work.
+
+### Week 1 — Foundations
+- `p6lab.ingestion.*`
+- `p6lab.features.l1_features`
+- `p6lab.features.l2_features`
+- Notebook 03 `L1_FEATURE_LAB` — produces the canonical `triple_view`
+  parquet that unblocks everything downstream
+
+### Week 2 — Features + First UI Surface
+- `p6lab.features.fragility_index`
+- `p6lab.features.vpin`
+- **UI §10.1 Triple View Panel** + `replay_api.py` triple_frame
+  endpoint — can ship immediately using the parquet from notebook 03,
+  even before notebooks 04-07 exist. First demoable UI work.
+
+### Week 3 — Pattern Mining + Review Loop
+- `p6lab.patterns.*`
+- Notebook 04 `PATTERN_MINING`
+- **UI §10.3 Pattern Review Queue** + `pattern_api.py` — ship alongside
+  notebook 04 so mined candidates have an immediate review path
+
+### Week 4 — Execution (batch + interactive)
+- `p6lab.execution.*` (including `ReplayFeed` order-ID patch per §15.1)
+- Notebook 05 `EXECUTION_SIM`
+- **UI §10.2 Virtual Order Tool** + `fill_sim_api.py` — shares
+  `p6lab.execution.fill_simulator` with notebook 05
+
+### Week 5 — Correlation Engine
+- `p6lab.correlation.*`
+- `p6lab.validation.*`
+- Notebook 06 `CORRELATION_LAB`
+- **UI §10.4 Correlation Feed** + `correlation_api.py` — can stub
+  initially with template-matcher-only; swap to trained model once
+  notebook 06 exports it
+
+### Week 6 — Cascade + Fragility
+- Notebook 07 `CASCADE_LAB`
+- **UI §10.5 Fragility Gauge** — initial FI_fast+FI_full display works
+  with baseline weights from OB-reference; refine after notebook 07
+  validates and potentially rebalances weights
+
+### Week 7 — Close the loop
+- Rerun notebook 05 with signals from the live correlation engine
+  (notebook 06's output via §10.4) to measure tradeable-PnL
+  improvement over raw aggregator signals
+- Run all information-gain gates end-to-end
+- Write notebook 03-07 + UI integration test suite
+
+Every notebook and every UI panel is independently shippable. Partial
+progress is genuinely useful — you can demo the triple view in week 2
+with nothing but notebook 03's output, and keep adding surfaces without
+breaking the ones already done.

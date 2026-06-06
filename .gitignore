@@ -16,3 +16,9 @@ __pycache__/
 venv/
 node_modules/
 .DS_Store
+# compiled / build artifacts
+build/
+*.so
+*.o
+*.a
+*.dylib

@@ -1,0 +1,30 @@
+# Verified-working version lock — captured 2026-04-15 against the
+# NB03/NB05/NB06 smoketest harness.  Use this for reproducible runs:
+#
+#   pip install -r requirements-lock.txt
+#   pip install -e .
+#
+# The pyproject.toml ranges allow bumps within the same major; this file
+# records the *exact* set known to pass the smoketests.
+
+# --- core ---
+numpy==2.4.2
+pandas==3.0.1
+
+# --- lab (ML / data) ---
+scikit-learn==1.8.0
+scipy==1.17.1
+hdbscan==0.8.42
+umap-learn==0.5.12
+pyarrow==23.0.1
+pydantic==2.12.5
+sortedcontainers==2.4.0
+filelock==3.28.0
+lightgbm==4.6.0
+tabulate==0.10.0
+databento==0.73.0
+prometheus-client==0.24.1
+
+# --- notebook execution ---
+jupyter==1.1.1
+nbclient==0.10.4

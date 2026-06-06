@@ -1,0 +1,23 @@
+{
+  "tests/test_smoke_instruments.py::test_notebook_instrument[WRAP_P6_CORRELATION_LAB.ipynb-ES]": true,
+  "tests/test_smoke_instruments.py::test_notebook_instrument[WRAP_P6_CORRELATION_LAB.ipynb-CL]": true,
+  "tests/test_smoke_notebooks.py::test_notebook_smoke[WRAP_P6_L1_FEATURE_LAB.ipynb]": true,
+  "tests/test_smoke_notebooks.py::test_notebook_smoke[WRAP_P6_EXECUTION_SIM.ipynb]": true,
+  "tests/test_smoke_notebooks.py::test_notebook_smoke[WRAP_P6_CORRELATION_LAB.ipynb]": true,
+  "tests/test_smoke_notebooks.py::test_notebook_smoke[WRAP_P6_CASCADE_LAB.ipynb]": true,
+  "tests/test_labelers.py::TestPatternFiringLabels::test_empty_firings_all_zero": true,
+  "tests/test_labelers.py::TestPatternFiringLabels::test_dtype_binary_vs_multiclass": true,
+  "tests/test_live_runner.py::test_feature_accumulator_produces_engine_ready_windows": true,
+  "tests/test_live_runner.py::test_live_runner_end_to_end_via_mock": true,
+  "tests/test_live_runner.py::test_live_runner_respects_duration": true,
+  "tests/test_miner.py::TestHDBSCAN::test_clusters_distinct_groups": true,
+  "tests/test_miner.py::TestHDBSCAN::test_empty_input": true,
+  "tests/test_feed_parity.py::test_event_sequence_parity": true,
+  "tests/test_feed_parity.py::test_snapshot_shape_parity": true,
+  "tests/test_promote_pattern.py::TestPromotePatternCLI::test_promotes_cluster_to_mined_approved": true,
+  "tests/test_promote_pattern.py::TestPromotePatternCLI::test_dry_run_does_not_write": true,
+  "tests/test_promote_pattern.py::TestPromotePatternCLI::test_missing_cluster_id_errors": true,
+  "tests/test_promote_pattern.py::TestPromotePatternCLI::test_missing_parquet_errors": true,
+  "tests/test_l2_features.py::TestMomentumFeatures::test_trade_streak_extends_on_same_side": true,
+  "tests/test_l2_features.py::TestMomentumFeatures::test_trade_streak_resets_on_direction_flip": true
+}

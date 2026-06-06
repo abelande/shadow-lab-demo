@@ -1,0 +1,84 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "p6lab"
+version = "0.1.0"
+description = "P6 Research Lab — shared library for order-book microstructure research"
+readme = "SPEC.md"
+requires-python = ">=3.11"
+authors = [{ name = "Bel" }]
+license = { text = "Proprietary" }
+
+# Core dependencies are pinned to ranges with a verified upper bound (the
+# current installed version + safe minor headroom). Verified working set
+# captured from the smoketest run on 2026-04-15.
+dependencies = [
+    "numpy>=1.26,<3.0",
+    "pandas>=2.1,<4.0",
+]
+
+[project.optional-dependencies]
+# Lab ML dependencies — installed for notebooks + scaffold testing.
+# Core p6-v2 runtime does NOT require these.
+#
+# Versions verified working as of 2026-04-15 against NB03/NB05/NB06 smoketests.
+# Bumping major versions (e.g. scikit-learn 2.x) requires re-running the
+# notebook smoketest harness before committing.
+lab = [
+    "scikit-learn>=1.3,<2.0",
+    "scipy>=1.11,<2.0",
+    "hdbscan>=0.8.33,<0.9",
+    "umap-learn>=0.5,<0.6",
+    "pyarrow>=14,<25",
+    "pydantic>=2.0,<3.0",
+    "sortedcontainers>=2.4,<3.0",
+    "filelock>=3.12,<4.0",
+    "lightgbm>=4.0,<5.0",        # NB06 correlation engine
+    "xgboost>=2.0,<4.0",         # NB06 model diversity (Wave 3 Phase 6A)
+    "catboost>=1.2,<2.0",        # NB06 model diversity (Wave 3 Phase 6A)
+    "torch>=2.0,<3.0",           # 1D CNN BSV autoencoder (Wave 4 Phase 3)
+    "tabulate>=0.9,<1.0",        # required for pandas .to_markdown()
+    "databento>=0.50,<1.0",      # raw MBO replay feed (NB05)
+    "prometheus-client>=0.19,<1.0",  # optional MetricsRenderer backend
+    "pywavelets>=1.5,<2.0",          # Wave 6 Phase 6B: CWT features
+    "EMD-signal>=0.4,<2.0",          # Wave 8.5-C: production EMD (classical sift is degradation mode)
+]
+
+# Notebook execution + smoketest harness. Install with: `pip install -e .[notebook]`
+notebook = [
+    "jupyter>=1.0,<2.0",
+    "nbclient>=0.10,<1.0",
+    "nbconvert>=7.0,<8.0",
+    "ipykernel>=6.0,<7.0",
+]
+
+dev = [
+    "pytest>=7.4,<9.0",
+    "pytest-cov>=4.1,<7.0",
+    "bandit>=1.7,<2.0",          # security scanning per python/security.md
+]
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+markers = [
+    "benchmark: engine latency / performance regression tests",
+]
+
+[tool.bandit]
+# Exclude test + one-shot scripts from the scan.
+exclude_dirs = ["tests", "scripts"]
+# Skip known-safe patterns:
+#   B301 (pickle.load)   — we load ONLY our own signed model artefacts from
+#                          disk paths the operator controls; not user input.
+#   B310 (urllib.urlopen) — WebhookRenderer validates URL scheme (http/https)
+#                          at construction; no file:// abuse path exists.
+skips = ["B301", "B310"]

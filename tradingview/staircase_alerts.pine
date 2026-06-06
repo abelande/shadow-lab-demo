@@ -1,0 +1,48 @@
+//@version=5
+indicator("Staircase Terminal Alerts", overlay=true, max_labels_count=500)
+
+// ── Inputs ──────────────────────────────────────────────────────────
+i_webhookUrl    = input.string("https://your-server.com/webhook", "Webhook URL (display only)")
+i_confThreshold = input.float(0.5, "Min Confidence", minval=0.0, maxval=1.0, step=0.05)
+i_showRegime    = input.bool(true, "Show Regime Background")
+i_showLabels    = input.bool(true, "Show Confidence Labels")
+
+// ── External Signal Inputs (fed via webhook → alerts → Pine) ────────
+// These are set by TradingView alerts receiving webhook data.
+// In practice, use alert_message JSON parsing or manual input sources.
+i_signal     = input.int(0, "Signal (-1=SELL, 0=NONE, 1=BUY)")
+i_confidence = input.float(0.0, "Confidence (0-1)")
+i_regime     = input.string("UNKNOWN", "Regime", options=["TRENDING", "RANGING", "VOLATILE", "UNKNOWN"])
+
+// ── Signal Processing ───────────────────────────────────────────────
+isBuy  = i_signal == 1  and i_confidence >= i_confThreshold
+isSell = i_signal == -1 and i_confidence >= i_confThreshold
+
+// ── Visual Markers ──────────────────────────────────────────────────
+plotshape(isBuy,  title="BUY Signal",  style=shape.triangleup,   location=location.belowbar, color=color.new(color.green, 0), size=size.normal)
+plotshape(isSell, title="SELL Signal", style=shape.triangledown, location=location.abovebar, color=color.new(color.red, 0),   size=size.normal)
+
+// Confidence labels
+if i_showLabels and isBuy
+    label.new(bar_index, low, str.tostring(i_confidence * 100, "#.0") + "%",
+              style=label.style_label_up, color=color.new(color.green, 80),
+              textcolor=color.white, size=size.small)
+
+if i_showLabels and isSell
+    label.new(bar_index, high, str.tostring(i_confidence * 100, "#.0") + "%",
+              style=label.style_label_down, color=color.new(color.red, 80),
+              textcolor=color.white, size=size.small)
+
+// ── Regime Background ───────────────────────────────────────────────
+regimeColor = switch i_regime
+    "TRENDING"  => color.new(color.blue,   92)
+    "RANGING"   => color.new(color.gray,   92)
+    "VOLATILE"  => color.new(color.orange, 92)
+    => color.new(color.white, 100)
+
+bgcolor(i_showRegime ? regimeColor : na, title="Regime Background")
+
+// ── Alert Conditions ────────────────────────────────────────────────
+alertcondition(isBuy,  title="Staircase BUY",  message='{"signal":"BUY","confidence":{{i_confidence}},"regime":"{{i_regime}}"}')
+alertcondition(isSell, title="Staircase SELL", message='{"signal":"SELL","confidence":{{i_confidence}},"regime":"{{i_regime}}"}')
+alertcondition(isBuy or isSell, title="Staircase Any Signal", message='{"signal":"{{i_signal}}","confidence":{{i_confidence}},"regime":"{{i_regime}}"}')

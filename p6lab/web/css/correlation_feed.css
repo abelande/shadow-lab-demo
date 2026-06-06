@@ -1,0 +1,158 @@
+/* Live Signal Dock — chart-independent live view of correlation matches. */
+
+.signal-dock {
+  font-family: system-ui, -apple-system, sans-serif;
+  font-size: 12px;
+  color: #ddd;
+  background: #1e1e1e;
+  border: 1px solid #333;
+  border-radius: 4px;
+  padding: 8px 10px;
+  min-width: 320px;
+}
+
+.signal-dock__header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.signal-dock__title { font-weight: 700; color: #fff; }
+.signal-dock__health {
+  width: 10px; height: 10px; border-radius: 50%;
+  background: #555;
+  transition: background 0.2s ease;
+}
+.signal-dock__health.health--green  { background: #4caf50; box-shadow: 0 0 4px #4caf50; }
+.signal-dock__health.health--yellow { background: #ffeb3b; }
+.signal-dock__health.health--red    { background: #f44336; }
+.signal-dock__audio {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #aaa;
+  cursor: pointer;
+  user-select: none;
+}
+
+.signal-dock__summary {
+  display: flex; gap: 6px;
+  margin: 4px 0;
+}
+.tier-pill {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 3px 8px;
+  border-radius: 10px;
+  background: #2a2a2a;
+  border: 1px solid #333;
+}
+.tier-pill .dot {
+  display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+}
+.tier-pill--A .dot { background: #4caf50; }
+.tier-pill--B .dot { background: #ffeb3b; }
+.tier-pill--C .dot { background: #9e9e9e; }
+.tier-pill--total .dot { background: #4fc3f7; }
+.tier-pill b { color: #fff; }
+
+.signal-dock__sparkline {
+  width: 100%;
+  display: block;
+  border: 1px solid #2a2a2a;
+  border-radius: 2px;
+  background: #141414;
+  margin: 4px 0;
+}
+
+.signal-dock__filters {
+  display: flex; gap: 8px;
+  align-items: center;
+  padding: 4px 0;
+  border-top: 1px solid #2a2a2a;
+  border-bottom: 1px solid #2a2a2a;
+  margin: 4px 0;
+  color: #aaa;
+}
+.signal-dock__filters label { cursor: pointer; }
+.signal-dock__filters select {
+  background: #111;
+  color: #ddd;
+  border: 1px solid #333;
+  border-radius: 2px;
+  padding: 2px 4px;
+}
+
+.signal-dock__pinned {
+  border-bottom: 1px dashed #3a3a3a;
+  padding-bottom: 4px;
+  margin-bottom: 4px;
+}
+.signal-dock__list {
+  max-height: 360px;
+  overflow-y: auto;
+}
+
+.signal-row {
+  display: grid;
+  grid-template-columns: 24px minmax(80px, 1fr) 20px 50px 60px 80px 24px;
+  gap: 6px;
+  align-items: center;
+  padding: 4px 2px;
+  border-bottom: 1px solid #262626;
+  cursor: pointer;
+  transition: background 0.1s ease;
+}
+.signal-row:hover { background: #262626; }
+.signal-row--pinned {
+  background: #2a2520;
+  border-left: 2px solid #ff9800;
+  padding-left: 4px;
+}
+
+.tier-badge {
+  display: inline-block;
+  text-align: center;
+  font-weight: 700;
+  border-radius: 3px;
+  padding: 1px 4px;
+  font-size: 11px;
+  color: #111;
+}
+.tier-badge--A { background: #4caf50; }
+.tier-badge--B { background: #ffeb3b; }
+.tier-badge--C { background: #9e9e9e; }
+
+.pattern-id {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #fff;
+}
+.direction { font-weight: 700; color: #4fc3f7; text-align: center; }
+.score     { font-family: monospace; color: #ddd; text-align: right; }
+.atr       { font-family: monospace; color: #aaa; text-align: right; }
+.ts        { font-family: monospace; color: #888; }
+
+.pin-btn {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-size: 14px;
+  padding: 0;
+  color: #888;
+}
+.pin-btn:hover { color: #ff9800; }
+
+.signal-row__detail {
+  grid-column: 1 / -1;
+  margin-top: 4px;
+  padding: 6px 8px;
+  background: #141414;
+  border-radius: 2px;
+  border: 1px solid #2a2a2a;
+  font-size: 11px;
+  color: #aaa;
+  line-height: 1.5;
+}
+.signal-row__detail b { color: #ddd; font-weight: 600; }

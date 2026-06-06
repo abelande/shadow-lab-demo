@@ -1,0 +1,40 @@
+# Pre-commit hooks for p6lab.
+# Install with:
+#     pip install pre-commit
+#     pre-commit install
+#
+# Run on every commit; CI runs the same checks via `make` + bandit.
+# All hooks here are scoped to p6lab/ so pre-commit doesn't audit
+# sibling packages (p6, ingestion, cup_flip) that live in the same
+# git repo under different ownership conventions.
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+        exclude: "^data/|.dbn.zst$"
+      - id: end-of-file-fixer
+        exclude: "^data/|.dbn.zst$"
+      - id: check-yaml
+      - id: check-toml
+      - id: check-added-large-files
+        args: ["--maxkb=1024"]   # allow the ~530KB sample through, nothing bigger
+      - id: check-merge-conflict
+      - id: detect-private-key
+
+  - repo: https://github.com/PyCQA/bandit
+    rev: "1.7.10"
+    hooks:
+      - id: bandit
+        args: ["-c", "p6lab/pyproject.toml", "-r", "p6lab/src/", "-lll"]
+        additional_dependencies: ["bandit[toml]"]
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.8.4
+    hooks:
+      - id: ruff
+        args: ["--fix", "--exit-non-zero-on-fix"]
+        files: ^p6lab/
+      - id: ruff-format
+        files: ^p6lab/

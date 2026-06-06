@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Staircase Terminal</title>
+  <link rel="stylesheet" href="css/dashboard.css?v=20260413-phaseB">
+</head>
+<body>
+
+<div id="app">
+
+  <!-- ===== Stats Header Bar ===== -->
+  <div id="stats-header">
+    <div class="stats-group">
+      <span class="symbol-label" id="stat-symbol">--</span>
+      <div class="stat-item">
+        <span class="stat-label">CVD</span>
+        <span class="stat-value" id="stat-cvd">--</span>
+      </div>
+      <div class="stat-item">
+        <span class="stat-label">T/s</span>
+        <span class="stat-value" id="stat-tps">--</span>
+      </div>
+      <div class="stat-item">
+        <span class="stat-label">ADD</span>
+        <span class="stat-value" id="stat-add">--</span>
+      </div>
+      <div class="stat-item">
+        <span class="stat-label">CXL</span>
+        <span class="stat-value" id="stat-cxl">--</span>
+      </div>
+      <div class="stat-item">
+        <span class="stat-label">MOD</span>
+        <span class="stat-value" id="stat-mod">--</span>
+      </div>
+      <div class="stat-item">
+        <span class="stat-label">FIL</span>
+        <span class="stat-value" id="stat-fil">--</span>
+      </div>
+      <div class="stat-item">
+        <span class="stat-label">LIVE</span>
+        <span class="stat-value" id="stat-live">--</span>
+      </div>
+    </div>
+    <div class="connection-status">
+      <span id="conn-text">DISCONNECTED</span>
+      <span class="connection-dot" id="conn-dot"></span>
+    </div>
+  </div>
+
+  <!-- ===== Main Content: Chart + Right Panel ===== -->
+  <div id="main-content">
+
+    <!-- Chart Panel (70%) -->
+    <div id="chart-panel">
+      <div id="chart-container"></div>
+      <canvas id="depth-overlay"></canvas>
+      <div id="chart-et-clock" style="position:absolute; top:8px; right:88px; font-size:11px; color:#888; font-family:var(--font-mono); pointer-events:none; z-index:10;"></div>
+      <div id="bar-countdown" style="
+        display: none;
+        position: absolute;
+        right: 4px;
+        font-size: 10px;
+        font-family: var(--font-mono);
+        color: #ccc;
+        background: rgba(10,10,10,0.85);
+        padding: 1px 5px;
+        border-radius: 2px;
+        pointer-events: none;
+        z-index: 20;
+        letter-spacing: 0.5px;
+      ">--</div>
+
+      <!-- Chart Overlays (badges, top-left) -->
+      <div class="chart-overlays">
+        <div class="badge badge-regime" id="regime-badge">REGIME: --</div>
+        <div class="badge badge-game" id="cup-badge">
+          STATE: --
+          <span class="velocity-gauge"><span class="velocity-fill" id="velocity-fill"></span></span>
+        </div>
+      </div>
+
+      <!-- Force Arrow Overlay (moved to signal bar — see below) -->
+      <!-- Kept hidden elements for backward compat with l1-disabled logic -->
+      <div class="force-overlay" style="display:none;">
+        <div class="force-arrow" id="force-arrow">-</div>
+        <div class="force-label" id="force-label">INST FORCE: --</div>
+      </div>
+    </div>
+
+    <!-- Right Panel (30%) -->
+    <div id="right-panel">
+
+      <!-- DOM Panel (upper) -->
+      <div id="dom-panel">
+        <div class="dom-title">Depth of Market</div>
+        <div class="dom-table-wrap">
+          <table class="dom-table">
+            <thead>
+              <tr>
+                <th>VOL</th>
+                <th>#ORD</th>
+                <th>CUM</th>
+                <th>PRICE</th>
+                <th>CUM</th>
+                <th>#ORD</th>
+                <th>VOL</th>
+              </tr>
+            </thead>
+            <tbody id="dom-tbody">
+              <!-- Populated by dom_panel.js -->
+            </tbody>
+          </table>
+        </div>
+        <div class="dom-imbalance" id="dom-imbalance">
+          <span class="imbalance-bid">BID --%</span>
+          <span class="imbalance-mid">--</span>
+          <span class="imbalance-ask">ASK --%</span>
+        </div>
+      </div>
+
+      <!-- Tape Feed (lower) — live mode -->
+      <div id="tape-panel">
+        <div class="tape-title">Time &amp; Sales</div>
+        <div class="tape-header">
+          <span>TIME</span>
+          <span>SIDE</span>
+          <span>PRICE</span>
+          <span>SIZE</span>
+        </div>
+        <div class="tape-list" id="tape-list">
+          <!-- Populated by tape_feed.js -->
+        </div>
+      </div>
+
+      <!-- Tape Summary (lower) — replay mode only, hidden by default -->
+      <div id="tape-summary-panel" style="display:none;">
+        <!-- Populated by tape_summary.js -->
+      </div>
+
+      <!-- Correlation Feed (L6 pattern matches — Wave 5 Phase 5A thesis wire) -->
+      <div id="correlation-panel">
+        <div class="corr-title">Pattern Correlations</div>
+        <div class="corr-list" id="correlation-list">
+          <!-- Populated by correlation_feed.js -->
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ===== Replay Info Bar ===== -->
+  <div id="replay-info-bar" class="hidden">
+    <span class="replay-label">📁</span>
+    <span id="replay-file-name">--</span>
+    <span class="replay-sep">|</span>
+    <span id="replay-date-range">--</span>
+    <span class="replay-sep">|</span>
+    <span id="replay-timestamp">--</span>
+    <span class="replay-sep">|</span>
+    <span id="replay-progress-text">0%</span>
+    <div class="replay-progress-track"><div class="replay-progress-fill" id="replay-progress-fill"></div></div>
+  </div>
+
+  <!-- ===== Execution Sim Panel ===== -->
+  <div id="exec-sim-panel" style="display:none;">
+    <div class="exec-sim-inner">
+
+      <!-- Order type toggle -->
+      <div class="exec-toggle-group">
+        <button class="exec-toggle active" id="exec-toggle-limit" data-type="limit">LIMIT</button>
+        <button class="exec-toggle" id="exec-toggle-mkt" data-type="market">MKT</button>
+      </div>
+
+      <!-- Price input (hidden in market mode) -->
+      <div class="exec-price-group" id="exec-price-group">
+        <label class="exec-label">PRICE</label>
+        <input type="number" id="exec-price" class="exec-input" step="0.25"
+               placeholder="0.00" autocomplete="off">
+      </div>
+
+      <!-- Quantity input with +/- -->
+      <div class="exec-qty-group">
+        <button class="exec-qty-btn" id="exec-qty-minus">−</button>
+        <input type="number" id="exec-qty" class="exec-input exec-qty-input"
+               value="1" min="1" max="100" step="1">
+        <button class="exec-qty-btn" id="exec-qty-plus">+</button>
+        <label class="exec-label">CONTRACTS</label>
+      </div>
+
+      <!-- Buy / Sell buttons -->
+      <button class="exec-btn exec-buy" id="exec-buy">BUY</button>
+      <button class="exec-btn exec-sell" id="exec-sell">SELL</button>
+
+    </div>
+
+    <!-- Active positions list -->
+    <div id="exec-positions" class="exec-positions-list"></div>
+  </div>
+
+  <!-- ===== Replay Controls Bar ===== -->
+  <div id="replay-controls-bar"></div>
+
+  <!-- ===== Control Panel ===== -->
+  <div id="control-bar">
+    <div class="ctrl-group">
+      <label class="ctrl-label">MODE</label>
+      <select id="ctrl-mode" class="ctrl-select">
+        <option value="replay">Replay</option>
+        <option value="live">Live</option>
+      </select>
+      <span class="lock-indicator" data-step="mode"></span>
+    </div>
+    <div class="ctrl-group" id="ctrl-level-group">
+      <label class="ctrl-label">LEVEL</label>
+      <select id="ctrl-level" class="ctrl-select" title="L1: BBO + trades (standard). L3: full order book (MBO subscription required).">
+        <option value="L1" selected>L1 (BBO)</option>
+        <option value="L3">L3 (MBO)</option>
+      </select>
+    </div>
+    <div class="ctrl-group">
+      <label class="ctrl-label">SYMBOL</label>
+      <select id="ctrl-symbol" class="ctrl-select" disabled>
+        <option value="ES.c.0">ES (S&amp;P 500)</option>
+        <option value="NQ.c.0">NQ (Nasdaq)</option>
+        <option value="CL.c.0">CL (Crude)</option>
+        <option value="GC.c.0">GC (Gold)</option>
+        <option value="YM.c.0">YM (Dow)</option>
+      </select>
+      <span class="lock-indicator" data-step="symbol"></span>
+    </div>
+    <div class="ctrl-group">
+      <label class="ctrl-label">DATA FILE</label>
+      <select id="ctrl-datafile" class="ctrl-select" disabled>
+        <option value="">Auto (match symbol)</option>
+      </select>
+      <span class="lock-indicator" data-step="datafile"></span>
+    </div>
+    <div class="ctrl-group ctrl-group-session">
+      <label class="ctrl-label">SESSION</label>
+      <select id="ctrl-session" class="ctrl-select" disabled>
+        <option value="full">Full Day</option>
+        <option value="rth">RTH Only (9:30–4pm ET)</option>
+        <option value="overnight">Overnight (6pm–9:30am ET)</option>
+        <option value="custom">Custom Range</option>
+      </select>
+      <span class="lock-indicator" data-step="session"></span>
+    </div>
+    <div class="ctrl-group ctrl-group-timerange hidden" id="ctrl-timerange-group">
+      <label class="ctrl-label">FROM</label>
+      <input type="datetime-local" id="ctrl-time-start" class="ctrl-input-dt" title="Start time (UTC)">
+      <label class="ctrl-label">TO</label>
+      <input type="datetime-local" id="ctrl-time-end" class="ctrl-input-dt" title="End time (UTC)">
+      <span class="ctrl-hint" id="ctrl-file-range-hint"></span>
+    </div>
+    <div class="ctrl-group">
+      <label class="ctrl-label">SPEED</label>
+      <input type="range" id="ctrl-speed" class="ctrl-slider" min="1" max="30" value="5" step="1" disabled>
+      <span id="ctrl-speed-val" class="ctrl-val">5 fps</span>
+      <span class="lock-indicator" data-step="speed"></span>
+    </div>
+    <div class="ctrl-group">
+      <label class="ctrl-label">INTERVAL</label>
+      <select id="ctrl-interval" class="ctrl-select" disabled>
+        <option value="500">500ms</option>
+        <option value="1000" selected>1s</option>
+        <option value="2000">2s</option>
+        <option value="5000">5s</option>
+      </select>
+      <span class="lock-indicator" data-step="interval"></span>
+    </div>
+    <div class="ctrl-group">
+      <label class="ctrl-label">TIMEFRAME</label>
+      <select id="ctrl-timeframe" class="ctrl-select" disabled>
+        <option value="1000">1s</option>
+        <option value="5000">5s</option>
+        <option value="15000" selected>15s</option>
+        <option value="30000">30s</option>
+        <option value="60000">1m</option>
+        <option value="300000">5m</option>
+      </select>
+      <span class="lock-indicator" data-step="timeframe"></span>
+    </div>
+    <button class="ctrl-btn ctrl-start" id="ctrl-start" title="Start Feed" disabled>&#9654; START</button>
+    <button class="ctrl-btn ctrl-stop" id="ctrl-stop" title="Stop Feed">&#9724; STOP</button>
+    <span class="ctrl-status" id="ctrl-status">PAUSED</span>
+  </div>
+
+  <!-- ===== Signal Bar (Bottom) ===== -->
+  <div id="signal-bar">
+    <span class="signal-direction flat" id="sig-direction">⚪ FLAT</span>
+    <span class="signal-confidence" id="sig-confidence">Confidence: --%</span>
+    <span class="signal-urgency low" id="sig-urgency">Urgency: --</span>
+    <span class="signal-size" id="sig-size"></span>
+    <span class="signal-sep">│</span>
+    <span class="signal-force" id="sig-force">
+      <span class="force-arrow-inline" id="sig-force-arrow">-</span>
+      <span class="force-value" id="sig-force-value">FORCE: --</span>
+      <span class="force-bar-track"><span class="force-bar-fill" id="sig-force-fill"></span></span>
+    </span>
+  </div>
+
+</div>
+
+<!-- ===== Scripts ===== -->
+<script>
+  // Global error handler — log to page so we can see what's wrong
+  window.onerror = function(msg, url, line, col, err) {
+    console.error('[P6 Error]', msg, url, line);
+    var d = document.getElementById('stat-symbol');
+    if (d) d.textContent = 'JS ERR';
+    return false;
+  };
+</script>
+<script src="js/lightweight-charts.js"></script>
+<script src="js/chart.js?v=20260413-phaseB"></script>
+<script src="js/depth_overlay.js?v=20260413-phaseB"></script>
+<script src="js/stats_header.js?v=20260413-phaseB"></script>
+<script src="js/dom_panel.js?v=20260413-phaseB"></script>
+<script src="js/tape_feed.js?v=20260413-phaseB"></script>
+<script src="js/correlation_feed.js?v=20260421-wave5"></script>
+<script src="js/force_arrows.js?v=20260413-phaseB"></script>
+<script src="js/regime_badge.js?v=20260413-phaseB"></script>
+<script src="js/cup_flip_badge.js?v=20260413-phaseB"></script>
+<script src="js/signal_bar.js?v=20260413-phaseB"></script>
+<script src="js/websocket_client.js?v=20260413-phaseB"></script>
+<script src="js/backtest_controls.js?v=20260413-phaseB"></script>
+<script src="js/control_panel.js?v=20260413-phaseB"></script>
+<script src="js/level_renderer.js?v=20260413-phaseB"></script>
+<script src="js/exec_sim.js?v=20260415-specV2"></script>
+<script src="js/replay_controls.js?v=20260413-phaseB"></script>
+<script src="js/tape_summary.js?v=20260413-phaseB"></script>
+<script src="js/app.js?v=20260413-phaseB"></script>
+
+</body>
+</html>
