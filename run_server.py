@@ -18,23 +18,30 @@ try:
 except ImportError:
     pass
 
-# Ensure the parent directory of p6-v2 is on sys.path so that
-# `from p6v2.server.app import app` and `from p6v2.pipeline import ...`
-# both resolve correctly.
+# The app uses package-relative imports (e.g. `from ..models import ...`), so it
+# must be imported as a package. The project dir name may not be a valid Python
+# identifier (e.g. "shadow-lab-demo"); create/verify a sanitized symlink alias.
 project_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(project_dir)
 
-# The project directory name may be "p6-v2" which isn't a valid Python
-# package name. We need to create/verify a package alias.
 package_name = os.path.basename(project_dir)
-if package_name == "p6-v2":
-    # Symlink p6v2 → p6-v2 should exist; if not, use direct path manipulation
-    alias = os.path.join(parent_dir, "p6v2")
-    if os.path.islink(alias) or os.path.isdir(alias):
-        package_name = "p6v2"
+if not package_name.isidentifier():
+    alias = package_name.replace("-", "_")
+    alias_path = os.path.join(parent_dir, alias)
+    if not (os.path.islink(alias_path) or os.path.isdir(alias_path)):
+        try:
+            os.symlink(project_dir, alias_path)
+        except OSError:
+            pass
+    package_name = alias
 
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
+
+# Make the bundled p6lab library importable (powers the optional correlation engine).
+_p6lab_src = os.path.join(project_dir, "p6lab", "src")
+if os.path.isdir(_p6lab_src) and _p6lab_src not in sys.path:
+    sys.path.insert(0, _p6lab_src)
 
 if __name__ == "__main__":
     import argparse
