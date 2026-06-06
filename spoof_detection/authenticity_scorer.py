@@ -13,7 +13,11 @@ from ..models import AuthenticityProfile, SpoofEvent, SpoofType
 
 @dataclass
 class AuthenticityConfig:
-    """Tunable weights and thresholds."""
+    """Tunable weights and thresholds.
+
+    Demo note: the values below are illustrative defaults. Production-tuned
+    weights/thresholds are withheld in this public build (see DEMO-SCOPE.md).
+    """
     pull_weight: float = 0.35
     layer_weight: float = 0.30
     phantom_weight: float = 0.25

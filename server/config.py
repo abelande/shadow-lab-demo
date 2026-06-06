@@ -24,7 +24,7 @@ class ServerConfig(BaseModel):
     webhook_confidence_threshold: float = Field(default=0.7, description="Min confidence to fire webhook")
     webhook_rate_limit_seconds: float = Field(default=30.0, description="Min seconds between webhooks")
 
-    # Risk thresholds
+    # Risk thresholds (demo defaults — production-tuned values withheld; see DEMO-SCOPE.md)
     risk_max_position: float = Field(default=1.0, description="Max position size multiplier")
     risk_abstain_threshold: float = Field(default=0.3, description="Abstain below this confidence")
 

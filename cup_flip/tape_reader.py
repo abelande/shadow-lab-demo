@@ -27,6 +27,8 @@ class TapeReader:
             stop_run_levels: Minimum levels cleared to trigger a stop-run signal.
                              Default 5 (NQ needs a higher bar than ES's 3).
         """
+        # Detector params below are illustrative demo defaults;
+        # production-tuned values are withheld (see DEMO-SCOPE.md).
         self.streak_detector = StreakDetector(min_streak_length=3)
         self.stall_detector = StallDetector(min_failed_attempts=3, window_ms=1500)
         self.stop_run_detector = StopRunDetector(
