@@ -1,0 +1,45 @@
+# DEMO LIBRARY — illustrative synthetic patterns only.
+# This is NOT the mined production library (that, its outcome statistics, and the
+# trained correlation models are withheld from this public build — see DEMO-SCOPE.md).
+# Tier letters and any numbers here are placeholders for demonstration.
+version: 1
+generated: "demo-2026-06-06"
+patterns:
+  lorem_bull_cup:
+    name: lorem_bull_cup
+    l3_signature: "bull_streak>=3 & resting_bid_absorption"
+    l2_manifestation: "stacked_bid_refill_at_support"
+    l1_footprint: "cumulative_delta_positive_divergence"
+    instruments: ["NQ", "ES"]
+    outcome_distribution:
+      bull:
+        mean_atr: 1.2
+        std: 0.6
+        hit_rate: 0.58
+        n: 240
+
+  ipsum_fade_wall:
+    name: ipsum_fade_wall
+    l3_signature: "phantom_wall_ask & pull_before_touch"
+    l2_manifestation: "large_ask_pulled_on_approach"
+    l1_footprint: "failed_breakout_rejection"
+    instruments: ["NQ"]
+    outcome_distribution:
+      bear:
+        mean_atr: 0.9
+        std: 0.5
+        hit_rate: 0.54
+        n: 180
+
+  dolor_regime_pivot:
+    name: dolor_regime_pivot
+    l3_signature: "regime_shift_to_volatile & balanced_book"
+    l2_manifestation: "spread_widening_with_thinning_depth"
+    l1_footprint: "volatility_expansion_breakout"
+    instruments: ["NQ", "ES"]
+    outcome_distribution:
+      bull:
+        mean_atr: 1.5
+        std: 0.9
+        hit_rate: 0.51
+        n: 150

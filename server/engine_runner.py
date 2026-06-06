@@ -53,8 +53,13 @@ def _build_correlation_components() -> tuple[object | None, object | None]:
         logger.info("correlation engine: p6lab imports failed (%s); skipping", exc)
         return None, None
 
-    p6lab_root = Path(__file__).resolve().parents[1] / "p6lab"
-    lib_path = p6lab_root / "artifacts" / "p6lab" / "pattern_library" / "library.yaml"
+    repo_root = Path(__file__).resolve().parents[1]
+    p6lab_root = repo_root / "p6lab"
+    # Demo build: prefer the bundled synthetic library; fall back to the (stripped) mined one.
+    demo_lib = repo_root / "demo" / "library_demo.yaml"
+    lib_path = demo_lib if demo_lib.is_file() else (
+        p6lab_root / "artifacts" / "p6lab" / "pattern_library" / "library.yaml"
+    )
     registry_path = p6lab_root / "correlation_runs" / "models" / "CURRENT.json"
     if not lib_path.is_file():
         logger.info("correlation engine: library.yaml missing at %s; skipping", lib_path)
