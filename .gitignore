@@ -1,0 +1,18 @@
+# secrets & real data — never commit
+.env
+.env.*
+!.env.example
+*.dbn.zst
+*.pkl
+*.pt
+data/settings.db*
+# heavy / generated
+artifacts/
+correlation_runs/
+logs/
+__pycache__/
+*.pyc
+.venv/
+venv/
+node_modules/
+.DS_Store
