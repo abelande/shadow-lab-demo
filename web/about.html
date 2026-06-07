@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>About — Shadow Lab Microstructure Demo</title>
+  <style>
+    :root { --bg:#0d0d0d; --fg:#d8d8d8; --mut:#888; --acc:#0ff; --card:#161616; --line:#262626; }
+    * { box-sizing: border-box; }
+    body { margin:0; background:var(--bg); color:var(--fg);
+           font:14px/1.6 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; }
+    a { color:#9cf; text-decoration:none; } a:hover { text-decoration:underline; }
+    .wrap { max-width:860px; margin:0 auto; padding:40px 22px 80px; }
+    h1 { font-size:24px; margin:0 0 4px; }
+    h2 { font-size:15px; text-transform:uppercase; letter-spacing:.08em; color:var(--acc);
+         margin:36px 0 12px; border-bottom:1px solid var(--line); padding-bottom:6px; }
+    .tag { color:var(--mut); font-size:13px; margin:0 0 8px; }
+    .frame { background:#101418; border:1px solid var(--acc); color:#bfeff0;
+             padding:10px 14px; border-radius:6px; font-size:13px; margin:18px 0; }
+    .mono { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; }
+    pre { background:var(--card); border:1px solid var(--line); border-radius:6px;
+          padding:14px; overflow:auto; font-size:12.5px; color:#bcd; }
+    table { width:100%; border-collapse:collapse; margin:8px 0; font-size:13px; }
+    th,td { text-align:left; padding:7px 10px; border-bottom:1px solid var(--line); }
+    th { color:var(--mut); font-weight:600; }
+    td.n { font-family:ui-monospace,monospace; color:#bfeff0; }
+    .chips { display:flex; flex-wrap:wrap; gap:8px; margin:10px 0; }
+    .chip { background:var(--card); border:1px solid var(--line); border-radius:14px;
+            padding:4px 11px; font-size:12.5px; }
+    .chip.done { border-color:#2c6; color:#9f7; } .chip.wip { border-color:#a83; color:#fc9; }
+    .back { display:inline-block; margin-bottom:18px; font-size:13px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <a class="back" href="/">&larr; back to the terminal</a>
+    <h1>Shadow Lab — Microstructure Engine</h1>
+    <p class="tag">A live order-book microstructure terminal. This is a public demo.</p>
+    <div class="frame"><b>This is a research lab, not a fund.</b> Everything here runs on a
+      <b>synthetic</b> L3 order-book stream (deterministic). The methodology is real; the
+      displayed numbers are illustrative and are <b>not</b> live trading performance.</div>
+
+    <h2>Architecture</h2>
+    <p>A deterministic synthetic Level-3 feed is replayed through the same production
+       detection pipeline used on real data, then streamed to the browser over a WebSocket.</p>
+    <pre>  synthetic L3 feed ─▶ 6-layer detection pipeline ─▶ /ws (30 Hz) ─▶ browser
+   (ingestion/         · cup-flip state machine      DepthIndicatorFrame   chart + DOM
+    synthetic.py)      · spoof / authenticity                              + overlays
+                       · staircase fragility                               + exec sim
+                       · spectral / institutional force                    (paper)
+                       · level tracker / DOM
+                       · regime context → weights</pre>
+    <p class="tag">Scripted events (momentum runs, institutional walls, spoofs, stop-runs)
+       fire on a 60-second loop so every detector layer is visible.</p>
+
+    <h2>What's real · what's stripped</h2>
+    <table>
+      <tr><th>Real (production code)</th><th>Stripped for this public build</th></tr>
+      <tr><td>The 6-layer detection pipeline, unchanged</td><td>Live Databento feed + API key</td></tr>
+      <tr><td>WebSocket frame contract + frontend</td><td>Real licensed market data (.dbn.zst)</td></tr>
+      <tr><td>Synthetic L3 generator</td><td>Mined pattern library + trained models</td></tr>
+      <tr><td>Paper exec sim</td><td>Production-tuned detector thresholds</td></tr>
+    </table>
+    <p class="tag">Full detail in <a href="/DEMO-SCOPE.md">DEMO-SCOPE.md</a>. No credentials
+       are present in this build — the demo is fully offline.</p>
+
+    <h2>Honest accuracy (1–10, illustrative)</h2>
+    <table>
+      <tr><th>Component</th><th>Today</th><th>Ceiling</th></tr>
+      <tr><td>Cup-flip state machine</td><td class="n">6</td><td class="n">8</td></tr>
+      <tr><td>Spoof / authenticity scoring</td><td class="n">6</td><td class="n">8</td></tr>
+      <tr><td>Regime context</td><td class="n">5</td><td class="n">7</td></tr>
+      <tr><td>Pattern correlation</td><td class="n">3</td><td class="n">7</td></tr>
+      <tr><td>Frontend / UX</td><td class="n">6</td><td class="n">8</td></tr>
+    </table>
+    <p class="tag">Framing: ~4.5 autonomous today, ~7 with a human in the loop; reachable
+       ~6.5 autonomous. Pattern correlation is intentionally low in this demo (illustrative
+       patterns are not wired to fire).</p>
+
+    <h2>Roadmap</h2>
+    <div class="chips">
+      <span class="chip done">✅ L3 ingest</span>
+      <span class="chip done">✅ Live detection engine</span>
+      <span class="chip done">✅ Replay browser</span>
+      <span class="chip done">✅ Paper exec sim</span>
+      <span class="chip wip">⏳ Pattern mining</span>
+      <span class="chip wip">⏳ Model fusion</span>
+      <span class="chip wip">⏳ Real broker</span>
+    </div>
+
+    <h2>Contact</h2>
+    <p class="tag mono">[email] · [LinkedIn]</p>
+  </div>
+</body>
+</html>

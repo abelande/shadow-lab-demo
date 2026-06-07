@@ -434,6 +434,26 @@ async def serve_index():
     )
 
 
+@app.get("/about", include_in_schema=False)
+@app.get("/about.html", include_in_schema=False)
+async def serve_about():
+    """Serve the honesty / architecture / accuracy page."""
+    from fastapi.responses import HTMLResponse
+    with open(os.path.join(_web_dir, "about.html"), "r", encoding="utf-8") as f:
+        return HTMLResponse(content=f.read())
+
+
+@app.get("/DEMO-SCOPE.md", include_in_schema=False)
+async def serve_demo_scope():
+    """Serve the transparency doc as plain text."""
+    from fastapi.responses import PlainTextResponse
+    path = os.path.join(os.path.dirname(_web_dir), "DEMO-SCOPE.md")
+    if not os.path.isfile(path):
+        raise HTTPException(status_code=404, detail="DEMO-SCOPE.md not found")
+    with open(path, "r", encoding="utf-8") as f:
+        return PlainTextResponse(content=f.read())
+
+
 if os.path.isdir(_web_dir):
     app.mount("/", StaticFiles(directory=_web_dir, html=True), name="frontend")
 
