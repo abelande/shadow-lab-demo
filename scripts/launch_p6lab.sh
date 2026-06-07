@@ -39,7 +39,7 @@ export MKL_NUM_THREADS="${MKL_NUM_THREADS:-8}"
 export MKL_DYNAMIC="${MKL_DYNAMIC:-FALSE}"
 export MKL_INTERFACE_LAYER="${MKL_INTERFACE_LAYER:-LP64}"
 
-REPO_ROOT="/Users/abelkifle/p6-v2"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 echo "p6lab launch:"
 echo "  data_file     = $P6LAB_DATA_FILE"
