@@ -320,6 +320,81 @@ class EngineRunner:
             "rth_only": rth_only,
         }
 
+    async def start_demo_feed(self, symbol: str = "NQ") -> dict:
+        """Start the bundled synthetic L3 feed (public demo mode).
+
+        Streams a deterministic order book with a scripted 60s loop of
+        microstructure events (momentum runs, institutional walls, spoofs,
+        stop runs) so the detector overlays fire continuously. No external
+        data or credentials required.
+        """
+        from ..ingestion.synthetic import SyntheticFeed
+
+        await self._stop_feed()
+        self._feed = SyntheticFeed(
+            symbol=f"{symbol}.SYN",
+            num_levels=20,
+            tick_size=0.25,
+            base_price=20000.0,
+            volatility=0.0008,
+        )
+        config.mode = "demo"
+        config.instrument = symbol.upper()
+        self.reset_pipeline()
+        self._feed_task = asyncio.create_task(self._demo_feed_loop())
+        logger.info("Demo synthetic feed started (symbol=%s)", symbol)
+        return {"status": "demo", "symbol": symbol.upper(), "synthetic": True}
+
+    async def _demo_feed_loop(self) -> None:
+        """Produce synthetic snapshots at ~30 Hz with a scripted 60s event loop."""
+        from ..models import Side
+
+        feed = self._feed
+        i = 0
+        period = 1800  # 60s @ 30 Hz
+        try:
+            while self._running and config.mode == "demo" and self._feed is not None:
+                phase = i % period
+                mid = getattr(feed, "_mid_price", 20000.0)
+                # Scripted microstructure timeline (corrected SyntheticFeed API:
+                # inject_momentum_run / inject_institutional_wall / inject_spoof /
+                # inject_stop_run — there is no inject_layering/cancel_wall).
+                if phase == 150:
+                    feed.inject_momentum_run(Side.BID, num_levels=5)        # bull streak / cup-flip
+                elif phase == 270:
+                    feed.inject_institutional_wall(Side.ASK, mid + 1.0, 800)  # phantom wall
+                elif phase == 390:
+                    feed.inject_spoof(Side.ASK, mid + 1.0, 600)             # spoof / pull-before-touch
+                elif phase == 510:
+                    feed.inject_stop_run(Side.ASK)                          # stop run
+                elif phase == 690:
+                    feed.inject_momentum_run(Side.ASK, num_levels=5)        # bear streak
+                elif phase in (870, 900, 930):
+                    feed.inject_spoof(Side.BID, mid - 1.0, 500)             # layering-like cluster
+                elif phase == 1050:
+                    feed.inject_institutional_wall(Side.BID, mid - 1.0, 800)
+                elif phase == 1230:
+                    feed.inject_stop_run(Side.BID)
+
+                snapshot = await feed.next()
+                if snapshot is not None:
+                    if snapshot.mid_price is not None:
+                        await ws_manager.broadcast_tick({
+                            "type": "price_tick",
+                            "price": snapshot.mid_price,
+                            "bid": snapshot.best_bid,
+                            "ask": snapshot.best_ask,
+                            "ts": snapshot.timestamp_ms,
+                        })
+                    await self.submit_snapshot(snapshot)
+                i += 1
+                await asyncio.sleep(1 / 30)
+        except asyncio.CancelledError:
+            pass
+        except Exception:
+            logger.exception("Demo feed loop error")
+            config.mode = "paused"
+
     async def _live_feed_loop(self) -> None:
         """Consume live feed and submit snapshots to processing queue.
 

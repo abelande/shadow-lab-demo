@@ -60,6 +60,13 @@ async def lifespan(app: FastAPI):
     # Start engine runner
     engine_runner.start()
 
+    # Public demo: auto-start the synthetic L3 feed so the page streams on load.
+    if os.environ.get("DEMO_MODE", "").lower() in ("1", "true", "yes"):
+        try:
+            await engine_runner.start_demo_feed(symbol=os.environ.get("DEMO_SYMBOL", "NQ"))
+        except Exception:
+            logger.exception("DEMO_MODE: failed to start synthetic feed")
+
     yield
 
     # Shutdown
