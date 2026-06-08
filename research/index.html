@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>p6lab — Research Notebooks (Demo)</title>
+  <style>
+    :root { --bg:#0d0d0d; --side:#121212; --fg:#dcdcdc; --mut:#888; --acc:#9cf; --line:#262626; }
+    * { box-sizing:border-box; } html,body { height:100%; }
+    body { margin:0; background:var(--bg); color:var(--fg);
+           font:14px/1.55 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; display:flex; }
+    a { color:var(--acc); text-decoration:none; }
+    #side { width:268px; min-width:268px; background:var(--side); border-right:1px solid var(--line);
+            padding:18px 16px; overflow:auto; }
+    #side h1 { font-size:15px; margin:0 0 2px; color:#fff; }
+    #side .tag { color:var(--mut); font-size:12px; margin:0 0 14px; }
+    #side .banner { background:#1a1606; border:1px solid #6a5; color:#dca; border-radius:5px;
+                    padding:8px 10px; font-size:11.5px; margin-bottom:14px; }
+    #side a.nb { display:block; padding:7px 9px; border-radius:5px; color:#cdd; margin:2px 0; font-size:13px; }
+    #side a.nb:hover { background:#1e1e1e; } #side a.nb.act { background:#23314a; color:#fff; }
+    #side hr { border:none; border-top:1px solid var(--line); margin:14px 0; }
+    #side .meta { font-size:11.5px; color:var(--mut); }
+    #main { flex:1; } iframe { width:100%; height:100%; border:none; background:#fff; }
+  </style>
+</head>
+<body>
+  <div id="side">
+    <h1>p6lab — Research</h1>
+    <p class="tag">Leakage-free microstructure ML, in notebooks.</p>
+    <div class="banner"><b>Methodology is real; result numbers are redacted</b> (▒). The raw
+      L3 data is licensed and not shipped. Code/approach shown in full.</div>
+    <a class="nb act" target="nb" href="notebooks/rendered/01_L1_FEATURE_LAB.html">01 · L1 feature lab</a>
+    <a class="nb" target="nb" href="notebooks/rendered/02_PATTERN_MINING.html">02 · Pattern mining</a>
+    <a class="nb" target="nb" href="notebooks/rendered/03_CASCADE_LAB.html">03 · Cascade lab</a>
+    <a class="nb" target="nb" href="notebooks/rendered/04_CPCV_FIGURE.html">04 · CPCV figure ★</a>
+    <a class="nb" target="nb" href="notebooks/rendered/05_MULTIDAY_CPCV.html">05 · Multi-day CPCV</a>
+    <a class="nb" target="nb" href="notebooks/rendered/06_EXECUTION_SIM.html">06 · Execution sim</a>
+    <a class="nb" target="nb" href="notebooks/rendered/07_CORRELATION_LAB.html">07 · Correlation lab</a>
+    <hr>
+    <p class="meta"><a href="DEMO-SCOPE.md">DEMO-SCOPE</a> · <a href="../">← microstructure demo</a></p>
+    <p class="meta">Methodology: triple-barrier labeling · purged CPCV · cascade classification · paper execution.</p>
+  </div>
+  <div id="main"><iframe name="nb" src="notebooks/rendered/01_L1_FEATURE_LAB.html"></iframe></div>
+  <script>
+    for (const a of document.querySelectorAll('a.nb'))
+      a.onclick = () => { document.querySelectorAll('a.nb').forEach(x=>x.classList.remove('act')); a.classList.add('act'); };
+  </script>
+</body>
+</html>
