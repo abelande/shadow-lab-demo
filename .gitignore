@@ -22,3 +22,7 @@ build/
 *.o
 *.a
 *.dylib
+
+# internal research docs — never ship
+reports/
+reports1/
