@@ -454,6 +454,11 @@ async def serve_demo_scope():
         return PlainTextResponse(content=f.read())
 
 
+# Demo B: serve the p6lab research notebooks (static HTML) at /research
+_research_dir = os.path.join(os.path.dirname(_web_dir), "research")
+if os.path.isdir(_research_dir):
+    app.mount("/research", StaticFiles(directory=_research_dir, html=True), name="research")
+
 if os.path.isdir(_web_dir):
     app.mount("/", StaticFiles(directory=_web_dir, html=True), name="frontend")
 
